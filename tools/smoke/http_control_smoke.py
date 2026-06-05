@@ -48,6 +48,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        request_json(args.base_url, "POST", "/api/cmd", {"cmd": "reset"})
         initial = request_json(args.base_url, "GET", "/api/status")
         print("initial:", json.dumps(initial, ensure_ascii=False))
 
