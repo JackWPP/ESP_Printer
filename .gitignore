@@ -1,0 +1,30 @@
+# Runtime and local agent state
+.omx/
+
+# PlatformIO / firmware build outputs
+.pio/
+firmware/.pio/
+build/
+firmware/build/
+*.elf
+*.bin
+*.map
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+serial-*.txt
+monitor-*.txt
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+
+# Python cache from helper scripts/tests
+__pycache__/
+*.py[cod]
+
+# Keep local VSCode machine setup out of repo unless replaced with generic config
+.vscode/settings.json
