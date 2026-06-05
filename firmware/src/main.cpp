@@ -109,7 +109,7 @@ static void printStatus() {
 }
 
 static void printHelp() {
-  Serial.println(F("commands: set <min> | start | pause | resume | stop | reset | hook | calib | status | wifireset | help"));
+  Serial.println(F("commands: set <min> | start | pause | resume | stop | reset | hook | calib | status | wifiset <ssid> <pass> | wifireset | help"));
 }
 
 static void handleSerialCommand(String command) {
@@ -138,6 +138,21 @@ static void handleSerialCommand(String command) {
     Serial.printf("> calib %s (GPIO%d)\n", calibOn ? "ON" : "OFF", HOOK_ADC_PIN);
   } else if (command == "status") {
     printStatus();
+  } else if (command.startsWith("wifiset ")) {
+#if defined(ARDUINO_ARCH_ESP32)
+    int firstSpace = command.indexOf(' ');
+    int secondSpace = command.indexOf(' ', firstSpace + 1);
+    if (firstSpace < 0 || secondSpace < 0 || secondSpace == command.length() - 1) {
+      Serial.println(F("> usage: wifiset <ssid> <pass>"));
+      return;
+    }
+    String ssid = command.substring(firstSpace + 1, secondSpace);
+    String pass = command.substring(secondSpace + 1);
+    Serial.printf("> saving WiFi credentials for %s and restarting\n", ssid.c_str());
+    wifiManager.saveCredentials(ssid, pass);
+#else
+    Serial.println(F("> WiFi setup is only available on ESP32 builds"));
+#endif
   } else if (command == "wifireset") {
 #if defined(ARDUINO_ARCH_ESP32)
     Serial.println(F("> clearing WiFi credentials and restarting"));

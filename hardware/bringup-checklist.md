@@ -18,11 +18,23 @@ python -m platformio device monitor -b 115200 --port COM3
   - `AP TimePrint-XXXX at 192.168.4.1`
   - `Web server started`
   - `open http://192.168.4.1/`
+- Automated check from the repository root:
+
+```powershell
+python tools/smoke/serial_boot_smoke.py --port COM3
+```
 
 ## 2. Web Control
 
 - Join the `TimePrint-XXXX` WiFi AP.
 - Open `http://192.168.4.1/`.
+- Optional: provision the board onto the local 2.4 GHz LAN over serial:
+
+```powershell
+python tools/smoke/serial_wifi_provision.py --port COM3 --ssid "<ssid>" --password "<password>"
+```
+
+- After provisioning, use the printed STA IP instead of `192.168.4.1`.
 - Verify commands:
   - Set minutes and start.
   - Pause and resume.
@@ -34,6 +46,12 @@ python -m platformio device monitor -b 115200 --port COM3
 Invoke-RestMethod -Uri http://192.168.4.1/api/status
 Invoke-RestMethod -Method Post -Uri http://192.168.4.1/api/cmd `
   -ContentType application/json -Body '{"cmd":"set","minutes":1}'
+```
+
+- Automated check after joining the AP:
+
+```powershell
+python tools/smoke/http_control_smoke.py --base-url http://192.168.4.1
 ```
 
 ## 3. HPD482 Printer
