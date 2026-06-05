@@ -68,6 +68,9 @@ these commands.
 
 - The default printer is `PrinterStub`; it prints slips to serial so firmware
   behavior can be verified without HPD482 hardware.
+- `HPD482Printer` is available as the real printer driver foundation. It uses
+  UART 115200, waits for `READY`, configures `AT+EC=2`, and sends HPD482 AT
+  commands with timeouts. It is not selected by default yet.
 - Physical hook is disabled by default. Use `calib` with the blue timer signal
   divided into ADC1 GPIO before enabling `ENABLE_PHYSICAL_HOOK`.
 - The real printer driver must target HPD482 AT commands, not ESC/POS.

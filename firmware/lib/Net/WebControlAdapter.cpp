@@ -7,6 +7,8 @@ namespace timeprint {
 WebControlAdapter::WebControlAdapter(TimerCore* core, TimePrintWiFiManager* wifi)
     : core_(core),
       wifi_(wifi)
+      ,
+      commandAdapter_(core, wifi)
 #if defined(ARDUINO_ARCH_ESP32)
       ,
       server_(80),
@@ -34,31 +36,7 @@ void WebControlAdapter::loop() {
 }
 
 bool WebControlAdapter::handleCommand(JsonDocument& doc) {
-  if (!core_ || !doc["cmd"].is<const char*>()) return false;
-
-  const char* command = doc["cmd"];
-  if (strcmp(command, "set") == 0) {
-    core_->setTime(doc["minutes"] | 0);
-  } else if (strcmp(command, "start") == 0) {
-    core_->start();
-  } else if (strcmp(command, "pause") == 0) {
-    core_->pause();
-  } else if (strcmp(command, "resume") == 0) {
-    core_->resume();
-  } else if (strcmp(command, "stop") == 0) {
-    core_->stop();
-  } else if (strcmp(command, "reset") == 0) {
-    core_->reset();
-  } else if (strcmp(command, "config") == 0) {
-    if (!wifi_) return false;
-    JsonVariant data = doc["data"];
-    const char* ssid = data["ssid"] | "";
-    const char* pass = data["pass"] | "";
-    return wifi_->saveCredentials(String(ssid), String(pass));
-  } else {
-    return false;
-  }
-
+  if (!commandAdapter_.handle(doc)) return false;
   broadcastStatus();
   return true;
 }

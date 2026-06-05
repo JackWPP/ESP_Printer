@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+#include "CommandAdapter.h"
 #include "TimerCore.h"
 #include "WiFiManager.h"
 
@@ -29,6 +30,7 @@ class WebControlAdapter : public ITimerCoreListener {
  private:
   TimerCore* core_;
   TimePrintWiFiManager* wifi_;
+  CommandAdapter commandAdapter_;
   uint32_t lastBroadcastMs_ = 0;
 
 #if defined(ARDUINO_ARCH_ESP32)

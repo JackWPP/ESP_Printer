@@ -8,9 +8,11 @@
 #include <WiFi.h>
 #endif
 
+#include "CommandAdapter.h"
+
 namespace timeprint {
 
-class TimePrintWiFiManager {
+class TimePrintWiFiManager : public IDeviceConfigStore {
  public:
   void begin();
   void loop();
@@ -19,6 +21,9 @@ class TimePrintWiFiManager {
   const String& apSsid() const { return apSsid_; }
   String ipString() const;
   bool saveCredentials(const String& ssid, const String& pass);
+  bool saveWiFiCredentials(const String& ssid, const String& pass) override {
+    return saveCredentials(ssid, pass);
+  }
 
  private:
 #if defined(ARDUINO_ARCH_ESP32)
