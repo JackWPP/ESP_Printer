@@ -88,11 +88,11 @@ void HPD482Printer::printSlip(const SlipData& slip) {
   sendCommand("AT+CN=24");
   printText("------------------------");
   char line[48];
-  snprintf(line, sizeof(line), "Planned: %s", planned);
+  snprintf(line, sizeof(line), "计划: %s", planned);
   printText(line);
-  snprintf(line, sizeof(line), "Actual : %s", actual);
+  snprintf(line, sizeof(line), "实际: %s", actual);
   printText(line);
-  snprintf(line, sizeof(line), "Overrun: %s", overrun);
+  snprintf(line, sizeof(line), "超时: %s", overrun);
   printText(line);
   printText("        :)");
   printText("------------------------");
@@ -102,9 +102,9 @@ void HPD482Printer::printSlip(const SlipData& slip) {
 void HPD482Printer::printSimple(const char* message) {
   sendCommand("AT+CN=24");
   printText("------------------------");
-  printText(message ? message : "Physical timer elapsed");
+  printText(message ? message : "物理计时器到时");
   char uptime[32];
-  snprintf(uptime, sizeof(uptime), "Uptime: %lus", static_cast<unsigned long>(millis() / 1000));
+  snprintf(uptime, sizeof(uptime), "运行: %lu秒", static_cast<unsigned long>(millis() / 1000));
   printText(uptime);
   printText("        :)");
   printText("------------------------");

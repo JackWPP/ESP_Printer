@@ -28,11 +28,25 @@ static void formatMMSS(uint32_t seconds, char* out, size_t len) {
            static_cast<unsigned>(seconds % 60));
 }
 
+static const char* stateToChinese(State state) {
+  switch (state) {
+    case State::Idle:
+      return "待机";
+    case State::Running:
+      return "计时中";
+    case State::Paused:
+      return "已暂停";
+    case State::Overtime:
+      return "已超时";
+  }
+  return "未知";
+}
+
 class SerialStatus : public ITimerCoreListener {
  public:
   void onStateChanged(State, State to) override {
-    Serial.print(F("[STATE] "));
-    Serial.println(stateToString(to));
+    Serial.print(F("[状态] "));
+    Serial.println(stateToChinese(to));
   }
 
   void onTick(const TickInfo& info) override {
@@ -40,17 +54,17 @@ class SerialStatus : public ITimerCoreListener {
     char overrun[8];
     formatMMSS(info.remainingSeconds, remaining, sizeof(remaining));
     formatMMSS(info.overrunSeconds, overrun, sizeof(overrun));
-    Serial.printf("[TICK] planned=%us elapsed=%us remaining=%s overrun=%s\n",
+    Serial.printf("[计时] 计划=%us 已用=%us 剩余=%s 超时=%s\n",
                   static_cast<unsigned>(info.plannedSeconds),
                   static_cast<unsigned>(info.elapsedSeconds), remaining, overrun);
   }
 
   void onFeedback(Feedback fb) override {
-    const char* value = fb == Feedback::Start    ? "START"
-                        : fb == Feedback::TimeUp ? "TIME-UP"
-                        : fb == Feedback::Stop   ? "STOP"
-                                                 : "RESET";
-    Serial.print(F("[FEEDBACK] "));
+    const char* value = fb == Feedback::Start    ? "开始"
+                        : fb == Feedback::TimeUp ? "到时"
+                        : fb == Feedback::Stop   ? "停止"
+                                                 : "重置";
+    Serial.print(F("[反馈] "));
     Serial.println(value);
   }
 };
@@ -65,18 +79,18 @@ class PrinterStub : public Printer {
     formatMMSS(slip.actualSeconds, actual, sizeof(actual));
     formatMMSS(slip.overrunSeconds, overrun, sizeof(overrun));
 
-    Serial.println(F("\n----- [PRINT] slip: software path -----"));
-    Serial.printf("  planned : %s\n", planned);
-    Serial.printf("  actual  : %s\n", actual);
-    Serial.printf("  overrun : %s\n", overrun);
+    Serial.println(F("\n----- [打印] 便签：软件计时路径 -----"));
+    Serial.printf("  计划时间：%s\n", planned);
+    Serial.printf("  实际用时：%s\n", actual);
+    Serial.printf("  超时时间：%s\n", overrun);
     Serial.println(F("            :)"));
     Serial.println(F("---------------------------------------\n"));
   }
 
   void printSimple(const char* message) override {
-    Serial.println(F("\n----- [PRINT] slip: physical hook -----"));
+    Serial.println(F("\n----- [打印] 便签：物理 hook 路径 -----"));
     Serial.printf("  %s\n", message);
-    Serial.printf("  uptime: %lus\n", static_cast<unsigned long>(millis() / 1000));
+    Serial.printf("  运行时间：%lu 秒\n", static_cast<unsigned long>(millis() / 1000));
     Serial.println(F("            :)"));
     Serial.println(F("---------------------------------------\n"));
   }
@@ -97,19 +111,19 @@ static uint32_t lastCalibMs = 0;
 static String lineBuffer;
 
 static void firePhysicalHook() {
-  printer.printSimple("Physical timer elapsed");
+  printer.printSimple("物理计时器到时");
 }
 
 static void printStatus() {
-  Serial.printf("> state=%s planned=%us elapsed=%us remaining=%us overrun=%us\n",
-                stateToString(core.state()), static_cast<unsigned>(core.plannedSeconds()),
+  Serial.printf("> 状态=%s 计划=%us 已用=%us 剩余=%us 超时=%us\n",
+                stateToChinese(core.state()), static_cast<unsigned>(core.plannedSeconds()),
                 static_cast<unsigned>(core.elapsedSeconds()),
                 static_cast<unsigned>(core.remainingSeconds()),
                 static_cast<unsigned>(core.overrunSeconds()));
 }
 
 static void printHelp() {
-  Serial.println(F("commands: set <min> | start | pause | resume | stop | reset | hook | calib | status | wifiset <ssid> <pass> | wifireset | help"));
+  Serial.println(F("命令: set <分钟> | start | pause | resume | stop | reset | hook | calib | status | wifiset <ssid> <密码> | wifireset | help"));
 }
 
 static void handleSerialCommand(String command) {
@@ -120,7 +134,7 @@ static void handleSerialCommand(String command) {
     int separator = command.indexOf(' ');
     uint32_t minutes = separator > 0 ? static_cast<uint32_t>(command.substring(separator + 1).toInt()) : 0;
     core.setTime(minutes);
-    Serial.printf("> set %u min\n", static_cast<unsigned>(minutes));
+    Serial.printf("> 已设置 %u 分钟\n", static_cast<unsigned>(minutes));
   } else if (command == "start") {
     core.start();
   } else if (command == "pause") {
@@ -135,7 +149,7 @@ static void handleSerialCommand(String command) {
     firePhysicalHook();
   } else if (command == "calib") {
     calibOn = !calibOn;
-    Serial.printf("> calib %s (GPIO%d)\n", calibOn ? "ON" : "OFF", HOOK_ADC_PIN);
+    Serial.printf("> 校准 %s (GPIO%d)\n", calibOn ? "开启" : "关闭", HOOK_ADC_PIN);
   } else if (command == "status") {
     printStatus();
   } else if (command.startsWith("wifiset ")) {
@@ -143,27 +157,27 @@ static void handleSerialCommand(String command) {
     int firstSpace = command.indexOf(' ');
     int secondSpace = command.indexOf(' ', firstSpace + 1);
     if (firstSpace < 0 || secondSpace < 0 || secondSpace == command.length() - 1) {
-      Serial.println(F("> usage: wifiset <ssid> <pass>"));
+      Serial.println(F("> 用法: wifiset <ssid> <密码>"));
       return;
     }
     String ssid = command.substring(firstSpace + 1, secondSpace);
     String pass = command.substring(secondSpace + 1);
-    Serial.printf("> saving WiFi credentials for %s and restarting\n", ssid.c_str());
+    Serial.printf("> 正在保存 %s 的 WiFi 凭据并重启\n", ssid.c_str());
     wifiManager.saveCredentials(ssid, pass);
 #else
-    Serial.println(F("> WiFi setup is only available on ESP32 builds"));
+    Serial.println(F("> WiFi 配网只在 ESP32 构建中可用"));
 #endif
   } else if (command == "wifireset") {
 #if defined(ARDUINO_ARCH_ESP32)
-    Serial.println(F("> clearing WiFi credentials and restarting"));
+    Serial.println(F("> 正在清除 WiFi 凭据并重启"));
     wifiManager.resetWiFi();
 #else
-    Serial.println(F("> WiFi reset is only available on ESP32 builds"));
+    Serial.println(F("> WiFi 重置只在 ESP32 构建中可用"));
 #endif
   } else if (command == "help") {
     printHelp();
   } else {
-    Serial.print(F("? unknown command: "));
+    Serial.print(F("? 未知命令: "));
     Serial.println(command);
     printHelp();
   }
@@ -179,13 +193,13 @@ void setup() {
   core.addListener(&webControl);
 #endif
 
-  Serial.println(F("\n=== TimePrint firmware scaffold ==="));
+  Serial.println(F("\n=== TimePrint 固件骨架 ==="));
   printHelp();
 
 #if defined(ARDUINO_ARCH_ESP32)
   wifiManager.begin();
   webControl.begin();
-  Serial.printf("[Web] open http://%s/\n", wifiManager.ipString().c_str());
+  Serial.printf("[Web] 打开 http://%s/\n", wifiManager.ipString().c_str());
 #endif
 }
 
@@ -220,7 +234,7 @@ void loop() {
 #endif
     if (calibOn && millis() - lastCalibMs >= 200) {
       lastCalibMs = millis();
-      Serial.printf("[CALIB] adc=%4d p2p=%4d osc=%d threshold=%d\n", sample,
+      Serial.printf("[校准] adc=%4d p2p=%4d 振荡=%d 阈值=%d\n", sample,
                     alarmDetector.lastP2P(), oscillating ? 1 : 0, ALARM_P2P_THRESHOLD);
     }
   }

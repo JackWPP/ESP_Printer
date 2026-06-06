@@ -21,7 +21,7 @@ void WebControlAdapter::begin() {
 #if defined(ARDUINO_ARCH_ESP32)
   registerRoutes();
   server_.begin();
-  Serial.println("[Web] server started");
+  Serial.println("[Web] Web 服务已启动");
 #endif
 }
 
@@ -86,7 +86,7 @@ void WebControlAdapter::registerRoutes() {
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, data, len);
     if (err || !handleCommand(doc)) {
-      client->text("{\"error\":\"invalid command\"}");
+      client->text("{\"error\":\"无效命令\"}");
     }
   });
   server_.addHandler(&ws_);
@@ -107,7 +107,7 @@ void WebControlAdapter::registerRoutes() {
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, data, len);
         if (err || !handleCommand(doc)) {
-          request->send(400, "application/json", "{\"error\":\"invalid command\"}");
+          request->send(400, "application/json", "{\"error\":\"无效命令\"}");
           return;
         }
         request->send(200, "application/json", statusJson());
@@ -118,7 +118,7 @@ void WebControlAdapter::registerRoutes() {
       request->send_P(200, "text/html; charset=utf-8", kIndexHtml);
       return;
     }
-    request->send(404, "text/plain", "not found");
+    request->send(404, "text/plain", "未找到");
   });
 #endif
 }

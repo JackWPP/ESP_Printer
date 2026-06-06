@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check TimePrint boot logs on a serial port."""
+"""检查串口上的 TimePrint 启动日志。"""
 
 from __future__ import annotations
 
@@ -8,11 +8,16 @@ import sys
 import time
 
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
 EXPECTED_MARKERS = (
-    "TimePrint firmware scaffold",
-    "commands: set <min>",
-    "[Web] server started",
-    "[Web] open http://",
+    "TimePrint 固件骨架",
+    "命令: set <分钟>",
+    "[Web] Web 服务已启动",
+    "[Web] 打开 http://",
 )
 
 
@@ -27,7 +32,7 @@ def main() -> int:
     try:
         import serial
     except ImportError:
-        print("FAIL: pyserial is not installed. Install PlatformIO or pyserial first.", file=sys.stderr)
+        print("失败：未安装 pyserial。请先安装 PlatformIO 或 pyserial。", file=sys.stderr)
         return 2
 
     deadline = time.time() + args.seconds
@@ -48,15 +53,15 @@ def main() -> int:
                     captured += chunk.decode("utf-8", errors="replace")
                     if all(marker in captured for marker in EXPECTED_MARKERS):
                         print(captured)
-                        print("PASS: serial boot markers found")
+                        print("通过：已找到串口启动标记")
                         return 0
     except Exception as exc:
-        print(f"FAIL: could not read {args.port}: {exc}", file=sys.stderr)
+        print(f"失败：无法读取 {args.port}: {exc}", file=sys.stderr)
         return 2
 
     print(captured)
     missing = [marker for marker in EXPECTED_MARKERS if marker not in captured]
-    print(f"FAIL: missing serial boot markers: {missing}", file=sys.stderr)
+    print(f"失败：缺少串口启动标记: {missing}", file=sys.stderr)
     return 1
 
 

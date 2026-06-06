@@ -8,7 +8,7 @@ const char kIndexHtml[] PROGMEM = R"HTML(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TimePrint</title>
+<title>时光小印</title>
 <style>
 :root{color-scheme:light;--ink:#222;--muted:#68707a;--line:#d8dde3;--paper:#f7f8fa;--panel:#fff;--red:#e23d3d;--accent:#176f8f;--ok:#2f7d51}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--paper);color:var(--ink)}
@@ -25,42 +25,42 @@ button{height:42px;border:1px solid #bfc8d2;border-radius:6px;background:#fff;co
 <body>
 <main>
   <section class="panel">
-    <h1>TimePrint</h1>
-    <p class="sub" id="net">Connecting</p>
-    <svg class="dial" viewBox="0 0 100 100" aria-label="timer dial">
+    <h1>时光小印</h1>
+    <p class="sub" id="net">正在连接</p>
+    <svg class="dial" viewBox="0 0 100 100" aria-label="计时表盘">
       <circle class="dial-bg" cx="50" cy="50" r="47"></circle>
       <path id="wedge" class="dial-rem" d=""></path>
       <circle class="dial-center" cx="50" cy="50" r="12"></circle>
     </svg>
     <div class="time" id="clock">00:00</div>
-    <div class="state" id="state">idle</div>
+    <div class="state" id="state">待机</div>
   </section>
   <section class="panel">
-    <label for="minutes">Minutes</label>
+    <label for="minutes">分钟</label>
     <input id="minutes" type="number" min="1" max="240" value="25" inputmode="numeric">
     <div class="grid">
-      <button class="primary" data-cmd="set-start">Set + Start</button>
-      <button data-cmd="pause">Pause</button>
-      <button data-cmd="resume">Resume</button>
-      <button data-cmd="stop">Stop</button>
-      <button data-cmd="reset">Reset</button>
-      <button data-cmd="status">Refresh</button>
+      <button class="primary" data-cmd="set-start">设置并开始</button>
+      <button data-cmd="pause">暂停</button>
+      <button data-cmd="resume">继续</button>
+      <button data-cmd="stop">停止</button>
+      <button data-cmd="reset">重置</button>
+      <button data-cmd="status">刷新</button>
     </div>
     <div class="statusline" id="msg"></div>
     <div class="setup">
-      <label for="ssid">WiFi SSID</label>
+      <label for="ssid">WiFi 名称</label>
       <input id="ssid" autocomplete="off">
-      <label for="pass" style="margin-top:10px">WiFi Password</label>
+      <label for="pass" style="margin-top:10px">WiFi 密码</label>
       <input id="pass" type="password" autocomplete="off">
       <div class="row">
-        <button data-cmd="savewifi">Save WiFi</button>
+        <button data-cmd="savewifi">保存 WiFi</button>
       </div>
     </div>
     <div class="setup">
-      <div class="metric"><span>Planned</span><span id="planned">0s</span></div>
-      <div class="metric"><span>Elapsed</span><span id="elapsed">0s</span></div>
-      <div class="metric"><span>Remaining</span><span id="remaining">0s</span></div>
-      <div class="metric"><span>Overtime</span><span id="overtime">0s</span></div>
+      <div class="metric"><span>计划时间</span><span id="planned">0 秒</span></div>
+      <div class="metric"><span>已用时间</span><span id="elapsed">0 秒</span></div>
+      <div class="metric"><span>剩余时间</span><span id="remaining">0 秒</span></div>
+      <div class="metric"><span>超时时间</span><span id="overtime">0 秒</span></div>
     </div>
   </section>
 </main>
@@ -70,12 +70,14 @@ let ws;
 function mmss(s){s=Math.max(0,Number(s)||0);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
 function polar(cx,cy,r,a){const rad=(a-90)*Math.PI/180;return [cx+r*Math.cos(rad),cy+r*Math.sin(rad)]}
 function wedgePath(frac,state){if(state==='overtime'||frac<=0)return '';if(frac>=.999)return 'M50 50 m-47 0 a47 47 0 1 0 94 0 a47 47 0 1 0 -94 0';const start=polar(50,50,47,0),end=polar(50,50,47,360*frac),large=frac>.5?1:0;return `M50 50 L${start[0]} ${start[1]} A47 47 0 ${large} 1 ${end[0]} ${end[1]} Z`}
-function render(s){const planned=s.planned_s||0,remaining=s.remaining_s||0,elapsed=s.elapsed_s||0,overtime=s.overtime_s||0;els.clock.textContent=s.state==='overtime'?('+'+mmss(overtime)):mmss(remaining||planned);els.state.textContent=s.state||'idle';els.planned.textContent=planned+'s';els.elapsed.textContent=elapsed+'s';els.remaining.textContent=remaining+'s';els.overtime.textContent=overtime+'s';els.wedge.setAttribute('d',wedgePath(planned?remaining/planned:0,s.state))}
+function stateText(state){return {idle:'待机',running:'计时中',paused:'已暂停',overtime:'已超时'}[state]||'未知'}
+function secondsText(s){return (Number(s)||0)+' 秒'}
+function render(s){const planned=s.planned_s||0,remaining=s.remaining_s||0,elapsed=s.elapsed_s||0,overtime=s.overtime_s||0;els.clock.textContent=s.state==='overtime'?('+'+mmss(overtime)):mmss(remaining||planned);els.state.textContent=stateText(s.state);els.planned.textContent=secondsText(planned);els.elapsed.textContent=secondsText(elapsed);els.remaining.textContent=secondsText(remaining);els.overtime.textContent=secondsText(overtime);els.wedge.setAttribute('d',wedgePath(planned?remaining/planned:0,s.state))}
 async function post(obj){const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});if(!r.ok)throw new Error(await r.text());return r.json()}
 async function status(){const r=await fetch('/api/status');render(await r.json())}
-async function command(kind){try{els.msg.textContent='';if(kind==='set-start'){await post({cmd:'reset'});await post({cmd:'set',minutes:Number(els.minutes.value)||1});await post({cmd:'start'})}else if(kind==='savewifi'){await post({cmd:'config',data:{ssid:els.ssid.value,pass:els.pass.value}});els.msg.textContent='WiFi saved. Device restarting.'}else if(kind==='status'){await status()}else{await post({cmd:kind})}}catch(e){els.msg.textContent=e.message}}
+async function command(kind){try{els.msg.textContent='';if(kind==='set-start'){await post({cmd:'reset'});await post({cmd:'set',minutes:Number(els.minutes.value)||1});await post({cmd:'start'})}else if(kind==='savewifi'){await post({cmd:'config',data:{ssid:els.ssid.value,pass:els.pass.value}});els.msg.textContent='WiFi 已保存，设备正在重启。'}else if(kind==='status'){await status()}else{await post({cmd:kind})}}catch(e){els.msg.textContent=e.message}}
 document.querySelectorAll('button[data-cmd]').forEach(b=>b.addEventListener('click',()=>command(b.dataset.cmd)));
-function connect(){ws=new WebSocket(`ws://${location.host}/ws`);ws.onopen=()=>{els.net.textContent='WebSocket connected'};ws.onclose=()=>{els.net.textContent='WebSocket closed';setTimeout(connect,1500)};ws.onerror=()=>{els.net.textContent='WebSocket error'};ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch(_){}}}
+function connect(){ws=new WebSocket(`ws://${location.host}/ws`);ws.onopen=()=>{els.net.textContent='WebSocket 已连接'};ws.onclose=()=>{els.net.textContent='WebSocket 已断开';setTimeout(connect,1500)};ws.onerror=()=>{els.net.textContent='WebSocket 错误'};ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch(_){}}}
 connect();status();
 </script>
 </body>

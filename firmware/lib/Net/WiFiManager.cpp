@@ -55,7 +55,7 @@ void TimePrintWiFiManager::startAp() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(apSsid_.c_str());
   dns_.start(53, "*", WiFi.softAPIP());
-  Serial.printf("[WiFi] AP %s at %s\n", apSsid_.c_str(), WiFi.softAPIP().toString().c_str());
+  Serial.printf("[WiFi] AP %s 地址 %s\n", apSsid_.c_str(), WiFi.softAPIP().toString().c_str());
 #endif
 }
 
@@ -64,7 +64,7 @@ bool TimePrintWiFiManager::startSta(const String& ssid, const String& pass) {
   apMode_ = false;
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), pass.c_str());
-  Serial.printf("[WiFi] connecting to %s", ssid.c_str());
+  Serial.printf("[WiFi] 正在连接 %s", ssid.c_str());
   uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 12000) {
     delay(250);
@@ -72,10 +72,10 @@ bool TimePrintWiFiManager::startSta(const String& ssid, const String& pass) {
   }
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("[WiFi] STA connected at %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[WiFi] STA 已连接，地址 %s\n", WiFi.localIP().toString().c_str());
     return true;
   }
-  Serial.println("[WiFi] STA failed, falling back to AP");
+  Serial.println("[WiFi] STA 连接失败，回退到 AP 模式");
 #endif
   return false;
 }

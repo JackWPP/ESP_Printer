@@ -1,15 +1,11 @@
-# TimePrint Hardware Notes
+# TimePrint 硬件记录
 
-Use this directory for BOMs, wiring photos, calibration notes, and enclosure
-files.
+本目录用于存放 BOM、接线照片、校准记录和外壳文件。
 
-Current hardware assumptions:
+当前硬件假设：
 
-- Controller: ESP32-S3-N16R8.
-- Printer: HPD482E-32 UART AT-command thermal printer, 12V/2A independent
-  supply, shared GND with ESP32.
-- Physical timer hook: blue alarm signal wire through a 10k/10k divider into an
-  ESP32 ADC1 GPIO. Detect oscillation peak-to-peak, not absolute level.
+- 主控：ESP32-S3-N16R8。
+- 打印机：HPD482E-32 UART AT 指令热敏打印机，独立 12V/2A 供电，与 ESP32 共地。
+- 物理计时器 hook：蓝色报警信号线经 10k/10k 分压后接入 ESP32 ADC1 GPIO。检测峰峰值振荡，不依赖绝对电平。
 
-Record the final COM port, ADC pin, p2p calibration values, and printer wiring
-here once verified on the bench.
+台架验证后，在这里记录最终 COM 口、ADC 引脚、p2p 校准值和打印机接线。

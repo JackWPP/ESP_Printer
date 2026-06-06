@@ -1,34 +1,32 @@
-# Smoke Tests
+# 烟测脚本
 
-These scripts verify bench behavior that unit tests and compile checks cannot
-fully prove.
+这些脚本用于验证单元测试和编译检查无法完全覆盖的台架行为。
 
-## Serial Boot
+## 串口启动
 
 ```powershell
 python tools/smoke/serial_boot_smoke.py --port COM3
 ```
 
-Expected result: boot text includes the TimePrint scaffold, command list, Web
-server startup, and the device URL.
+预期结果：启动文本包含 TimePrint 固件骨架、命令列表、Web 服务启动信息和设备访问地址。
 
-## HTTP Control
+## HTTP 控制
 
-First join the `TimePrint-XXXX` WiFi AP from the host machine, then run:
+先让电脑加入 `TimePrint-XXXX` WiFi AP，然后运行：
 
 ```powershell
 python tools/smoke/http_control_smoke.py --base-url http://192.168.4.1
 ```
 
-The script exercises `GET /api/status` plus `POST /api/cmd` for
-`set/start/pause/resume/stop/reset`.
+脚本会验证 `GET /api/status`，以及 `POST /api/cmd` 下的
+`set/start/pause/resume/stop/reset`。
 
-## Serial WiFi Provisioning
+## 串口 WiFi 配网
 
-To move the board from AP mode onto a local 2.4 GHz WiFi network:
+通过串口把开发板从 AP 模式配置到本地 2.4 GHz WiFi：
 
 ```powershell
 python tools/smoke/serial_wifi_provision.py --port COM3 --ssid "<ssid>" --password "<password>"
 ```
 
-The script prints the STA IP once the board reconnects.
+开发板重新连接后，脚本会打印 STA IP。

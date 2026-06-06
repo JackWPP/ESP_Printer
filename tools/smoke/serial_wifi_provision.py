@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Provision TimePrint WiFi credentials over the serial console."""
+"""通过串口控制台配置 TimePrint WiFi 凭据。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,11 @@ import argparse
 import re
 import sys
 import time
+
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def print_safe(text: str) -> None:
@@ -27,12 +32,12 @@ def main() -> int:
     try:
         import serial
     except ImportError:
-        print("FAIL: pyserial is not installed. Install PlatformIO or pyserial first.", file=sys.stderr)
+        print("失败：未安装 pyserial。请先安装 PlatformIO 或 pyserial。", file=sys.stderr)
         return 2
 
     command = f"wifiset {args.ssid} {args.password}\n".encode("utf-8")
     captured = ""
-    ip_pattern = re.compile(r"STA connected at ([0-9.]+)")
+    ip_pattern = re.compile(r"STA (?:connected at|已连接，地址) ([0-9.]+)")
     deadline = time.time() + args.timeout
 
     try:
@@ -50,14 +55,14 @@ def main() -> int:
                 match = ip_pattern.search(captured)
                 if match:
                     print_safe(captured)
-                    print(f"PASS: provisioned STA IP {match.group(1)}")
+                    print(f"通过：已配置 STA IP {match.group(1)}")
                     return 0
     except Exception as exc:
-        print(f"FAIL: could not provision via {args.port}: {exc}", file=sys.stderr)
+        print(f"失败：无法通过 {args.port} 配网: {exc}", file=sys.stderr)
         return 2
 
     print_safe(captured)
-    print("FAIL: did not observe STA connection before timeout", file=sys.stderr)
+    print("失败：超时前未观察到 STA 连接", file=sys.stderr)
     return 1
 
 
