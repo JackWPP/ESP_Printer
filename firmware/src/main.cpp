@@ -125,7 +125,12 @@ static uint32_t lastCalibMs = 0;
 static String lineBuffer;
 
 static void firePhysicalHook() {
-  if (activePrinter) activePrinter->printSimple("物理计时器到时");
+  if (activePrinter) {
+    Serial.printf("[hook] 使用打印机: %s\n", activePrinter->name());
+    activePrinter->printSimple("物理计时器到时");
+  } else {
+    Serial.println(F("[hook] 没有可用打印机！"));
+  }
 }
 
 static void printStatus() {
@@ -262,6 +267,7 @@ void setup() {
   Serial.printf("[打印机] 正在尝试 HPD482 (Serial2 RX=%d TX=%d)\n", PRINTER_RX_PIN, PRINTER_TX_PIN);
   if (hpdPrinter.begin(PRINTER_READY_TIMEOUT_MS)) {
     Serial.println(F("[打印机] HPD482 就绪，使用真实打印机"));
+    activePrinter = &hpdPrinter;
     printerBridge.setPrinter(&hpdPrinter);
     webControl.setActivePrinter(&hpdPrinter);
   } else {

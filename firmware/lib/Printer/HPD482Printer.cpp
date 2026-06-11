@@ -10,11 +10,12 @@ HPD482Printer::HPD482Printer(HardwareSerial& serial, int rxPin, int txPin, uint3
 bool HPD482Printer::begin(uint32_t readyTimeoutMs) {
   serial_.begin(baud_, SERIAL_8N1, rxPin_, txPin_);
   serial_.setTimeout(2000);
+  Serial.printf("[HPD482] 等待 READY (超时 %lu ms)...\n", static_cast<unsigned long>(readyTimeoutMs));
   ready_ = waitReady(readyTimeoutMs);
   if (!ready_) {
     Serial.println(F("[HPD482] 未收到 READY，尝试发 AT"));
     serial_.print("AT");
-    ready_ = waitOkSuffix("OK", 1000);
+    ready_ = waitOkSuffix("OK", 2000);
   }
   if (!ready_) {
     Serial.println(F("[HPD482] AT 也未回 OK，握手失败"));
@@ -116,15 +117,33 @@ void HPD482Printer::printSlip(const SlipData& slip) {
 }
 
 void HPD482Printer::printSimple(const char* message) {
-  sendCommand("AT+CN=24");
-  printText("------------------------");
-  printText(message ? message : "物理计时器到时");
+  Serial.println(F("[HPD482] printSimple 开始"));
+  bool ok;
+
+  ok = sendCommand("AT+CN=24");
+  Serial.printf("[HPD482] AT+CN=24 → %d\n", ok ? 1 : 0);
+
+  ok = printText("------------------------");
+  Serial.printf("[HPD482] 分隔线 → %d\n", ok ? 1 : 0);
+
+  ok = printText(message ? message : "物理计时器到时");
+  Serial.printf("[HPD482] 消息 → %d\n", ok ? 1 : 0);
+
   char uptime[32];
   snprintf(uptime, sizeof(uptime), "运行: %lu秒", static_cast<unsigned long>(millis() / 1000));
-  printText(uptime);
-  printText("        :)");
-  printText("------------------------");
-  feedPaperMm(10);
+  ok = printText(uptime);
+  Serial.printf("[HPD482] 时间 → %d\n", ok ? 1 : 0);
+
+  ok = printText("        :)");
+  Serial.printf("[HPD482] 笑脸 → %d\n", ok ? 1 : 0);
+
+  ok = printText("------------------------");
+  Serial.printf("[HPD482] 分隔线 → %d\n", ok ? 1 : 0);
+
+  ok = feedPaperMm(10);
+  Serial.printf("[HPD482] 走纸 → %d\n", ok ? 1 : 0);
+
+  Serial.println(F("[HPD482] printSimple 完成"));
 }
 
 void HPD482Printer::testPage() {
