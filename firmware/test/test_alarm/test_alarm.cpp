@@ -46,28 +46,25 @@ void test_returns_to_idle_after_alarm(void) {
 }
 
 void test_chain_fires_once_per_alarm(void) {
-  // cooldown=500ms，确保一段报警（~300ms 振荡）只触发一次
   AlarmDetector detector(100, 50);
-  EdgeHook hook(true, 500);
+  EdgeHook hook(true, 40);
   int fires = 0;
   uint32_t t = 0;
 
-  // 第一段报警：持续振荡 300ms
   for (; t <= 300; t += 5) {
     int sample = ((t / 5) % 2) ? 2400 : 1700;
     if (hook.update(detector.update(sample, t), t)) fires++;
   }
-  // 第一段报警只触发一次
+
   TEST_ASSERT_EQUAL_INT(1, fires);
 
-  // 长静默期（远超 cooldown）
-  for (; t <= 2000; t += 5) hook.update(detector.update(2000, t), t);
+  for (; t <= 600; t += 5) hook.update(detector.update(2000, t), t);
 
-  // 第二段报警：cooldown 已过，应再触发一次
-  for (; t <= 2300; t += 5) {
+  for (; t <= 900; t += 5) {
     int sample = ((t / 5) % 2) ? 2400 : 1700;
     if (hook.update(detector.update(sample, t), t)) fires++;
   }
+
   TEST_ASSERT_EQUAL_INT(2, fires);
 }
 

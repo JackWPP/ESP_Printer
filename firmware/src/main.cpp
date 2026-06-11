@@ -15,11 +15,11 @@
 
 using namespace timeprint;
 
-#define ENABLE_PHYSICAL_HOOK 1
+#define ENABLE_PHYSICAL_HOOK 0
 #define HOOK_ADC_PIN 4
 #define ALARM_P2P_THRESHOLD 300
 #define ALARM_WINDOW_MS 80
-#define HOOK_DEBOUNCE_MS 3000
+#define HOOK_DEBOUNCE_MS 500
 
 static AlarmDetector alarmDetector(ALARM_P2P_THRESHOLD, ALARM_WINDOW_MS);
 static EdgeHook physicalHook(true, HOOK_DEBOUNCE_MS);
@@ -309,12 +309,7 @@ void loop() {
     int sample = analogRead(HOOK_ADC_PIN);
     bool oscillating = alarmDetector.update(sample, millis());
 #if ENABLE_PHYSICAL_HOOK
-    bool hookFired = physicalHook.update(oscillating, millis());
-    if (hookFired) {
-      Serial.println(F("[hook] 物理 hook 触发！正在打印..."));
-      firePhysicalHook();
-      Serial.println(F("[hook] 打印完成"));
-    }
+    if (physicalHook.update(oscillating, millis())) firePhysicalHook();
 #endif
     if (calibOn && millis() - lastCalibMs >= 200) {
       lastCalibMs = millis();
