@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 
 #include "CommandAdapter.h"
+#include "Printer.h"
 #include "TimerCore.h"
 #include "WiFiManager.h"
 
@@ -19,6 +20,7 @@ class WebControlAdapter : public ITimerCoreListener {
 
   void begin();
   void loop();
+  void setActivePrinter(Printer* printer) { activePrinter_ = printer; }
   bool handleCommand(JsonDocument& doc);
   String statusJson() const;
   void broadcastStatus();
@@ -30,6 +32,7 @@ class WebControlAdapter : public ITimerCoreListener {
  private:
   TimerCore* core_;
   TimePrintWiFiManager* wifi_;
+  Printer* activePrinter_ = nullptr;
   CommandAdapter commandAdapter_;
   uint32_t lastBroadcastMs_ = 0;
 
@@ -39,6 +42,12 @@ class WebControlAdapter : public ITimerCoreListener {
 #endif
 
   void registerRoutes();
+  void handleWifiGet(AsyncWebServerRequest* request);
+  void handleWifiAdd(AsyncWebServerRequest* request, uint8_t* data, size_t len);
+  void handleWifiDelete(AsyncWebServerRequest* request, int index);
+  void handlePrinterGet(AsyncWebServerRequest* request);
+  void handlePrinterTest(AsyncWebServerRequest* request, uint8_t* data, size_t len);
+  void sendJson(AsyncWebServerRequest* request, int code, const String& body);
 };
 
 }  // namespace timeprint

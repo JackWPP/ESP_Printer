@@ -3,10 +3,12 @@
 #include "AlarmDetector.h"
 #include "PhysicalHook.h"
 #include "Printer.h"
+#include "PrinterConfig.h"
 #include "TimerCore.h"
 #include "TimerCorePrinterBridge.h"
 
 #if defined(ARDUINO_ARCH_ESP32)
+#include "HPD482Printer.h"
 #include "WebControlAdapter.h"
 #include "WiFiManager.h"
 #endif
@@ -94,12 +96,24 @@ class PrinterStub : public Printer {
     Serial.println(F("            :)"));
     Serial.println(F("---------------------------------------\n"));
   }
+
+  const char* name() const override { return "stub"; }
+  void testPage() override {
+    Serial.println(F("\n----- [打印] 自检：PrinterStub -----"));
+    Serial.println(F("  当前没有真实打印机，仅串口日志"));
+    Serial.println(F("  TimePrint stub printer v1"));
+    Serial.println(F("---------------------------------------\n"));
+  }
 };
 
 static TimerCore core;
 static SerialStatus serialStatus;
-static PrinterStub printer;
-static TimerCorePrinterBridge printerBridge(&printer);
+static PrinterStub stubPrinter;
+#if defined(ARDUINO_ARCH_ESP32)
+static HPD482Printer hpdPrinter(Serial2, PRINTER_RX_PIN, PRINTER_TX_PIN);
+#endif
+static Printer* activePrinter = &stubPrinter;
+static TimerCorePrinterBridge printerBridge(activePrinter);
 
 #if defined(ARDUINO_ARCH_ESP32)
 static TimePrintWiFiManager wifiManager;
@@ -111,7 +125,7 @@ static uint32_t lastCalibMs = 0;
 static String lineBuffer;
 
 static void firePhysicalHook() {
-  printer.printSimple("物理计时器到时");
+  if (activePrinter) activePrinter->printSimple("物理计时器到时");
 }
 
 static void printStatus() {
@@ -123,7 +137,7 @@ static void printStatus() {
 }
 
 static void printHelp() {
-  Serial.println(F("命令: set <分钟> | start | pause | resume | stop | reset | hook | calib | status | wifiset <ssid> <密码> | wifireset | help"));
+  Serial.println(F("命令: set <分钟> | start | pause | resume | stop | reset | hook | calib | status | wifilist [list|add|del|reset] | wifiset <ssid> <密码> | wifireset | help"));
 }
 
 static void handleSerialCommand(String command) {
@@ -157,7 +171,7 @@ static void handleSerialCommand(String command) {
     int firstSpace = command.indexOf(' ');
     int secondSpace = command.indexOf(' ', firstSpace + 1);
     if (firstSpace < 0 || secondSpace < 0 || secondSpace == command.length() - 1) {
-      Serial.println(F("> 用法: wifiset <ssid> <密码>"));
+      Serial.println(F("> 用法: wifiset <ssid> <密码>  (等价 wifilist add)"));
       return;
     }
     String ssid = command.substring(firstSpace + 1, secondSpace);
@@ -167,9 +181,57 @@ static void handleSerialCommand(String command) {
 #else
     Serial.println(F("> WiFi 配网只在 ESP32 构建中可用"));
 #endif
+  } else if (command == "wifilist" || command.startsWith("wifilist ")) {
+#if defined(ARDUINO_ARCH_ESP32)
+    String sub = (command.length() == 8) ? String("list") : command.substring(9);
+    sub.trim();
+    int sp = sub.indexOf(' ');
+    String verb = (sp < 0) ? sub : sub.substring(0, sp);
+    String rest = (sp < 0) ? String() : sub.substring(sp + 1);
+
+    if (verb == "list" || verb.length() == 0) {
+      int n = wifiManager.credentialCount();
+      Serial.printf("> WiFi 凭据 (%d/%d)%s\n", n, TimePrintWiFiManager::kMaxCredentials,
+                    wifiManager.hasDefaultCredential() ? " [NVS 为空，使用出厂默认]" : "");
+      for (int i = 0; i < n; ++i) {
+        Serial.printf("  [%d] %s\n", i, wifiManager.credentialSsid(i).c_str());
+      }
+    } else if (verb == "add") {
+      int sp2 = rest.indexOf(' ');
+      if (sp2 < 0) {
+        Serial.println(F("> 用法: wifilist add <ssid> <密码>"));
+        return;
+      }
+      String ssid = rest.substring(0, sp2);
+      String pass = rest.substring(sp2 + 1);
+      if (ssid.length() == 0) {
+        Serial.println(F("> SSID 不能为空"));
+        return;
+      }
+      Serial.printf("> 正在添加 %s 并重启\n", ssid.c_str());
+      wifiManager.saveCredentials(ssid, pass);
+    } else if (verb == "del") {
+      int idx = rest.toInt();
+      if (idx < 0 || idx >= wifiManager.credentialCount()) {
+        Serial.printf("> 索引无效 (0..%d)\n", wifiManager.credentialCount() - 1);
+        return;
+      }
+      String ssid = wifiManager.credentialSsid(idx);
+      wifiManager.removeCredential(idx);
+      Serial.printf("> 已删除 [%d] %s，重启中\n", idx, ssid.c_str());
+      wifiManager.commitAndRestart();
+    } else if (verb == "reset") {
+      Serial.println(F("> 正在清除全部 WiFi 凭据并重启"));
+      wifiManager.resetWiFi();
+    } else {
+      Serial.println(F("> 用法: wifilist [list|add <ssid> <pass>|del <idx>|reset]"));
+    }
+#else
+    Serial.println(F("> WiFi 列表管理只在 ESP32 构建中可用"));
+#endif
   } else if (command == "wifireset") {
 #if defined(ARDUINO_ARCH_ESP32)
-    Serial.println(F("> 正在清除 WiFi 凭据并重启"));
+    Serial.println(F("> 正在清除全部 WiFi 凭据并重启"));
     wifiManager.resetWiFi();
 #else
     Serial.println(F("> WiFi 重置只在 ESP32 构建中可用"));
@@ -195,6 +257,17 @@ void setup() {
 
   Serial.println(F("\n=== TimePrint 固件骨架 ==="));
   printHelp();
+
+#if defined(ARDUINO_ARCH_ESP32)
+  Serial.printf("[打印机] 正在尝试 HPD482 (Serial2 RX=%d TX=%d)\n", PRINTER_RX_PIN, PRINTER_TX_PIN);
+  if (hpdPrinter.begin(PRINTER_READY_TIMEOUT_MS)) {
+    Serial.println(F("[打印机] HPD482 就绪，使用真实打印机"));
+    printerBridge.setPrinter(&hpdPrinter);
+    webControl.setActivePrinter(&hpdPrinter);
+  } else {
+    Serial.println(F("[打印机] HPD482 未就绪，降级到 PrinterStub 串口日志"));
+  }
+#endif
 
 #if defined(ARDUINO_ARCH_ESP32)
   wifiManager.begin();

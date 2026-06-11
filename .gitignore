@@ -1,5 +1,7 @@
 # Runtime and local agent state
 .omx/
+.venv/
+
 
 # PlatformIO / firmware build outputs
 .pio/

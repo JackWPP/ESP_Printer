@@ -1,5 +1,6 @@
 #include "WebControlAdapter.h"
 
+#include "PrinterConfig.h"
 #include "WebAssets.h"
 
 namespace timeprint {
@@ -113,6 +114,40 @@ void WebControlAdapter::registerRoutes() {
         request->send(200, "application/json", statusJson());
       });
 
+  // WiFi 列表
+  server_.on("/api/wifi", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    handleWifiGet(request);
+  });
+  server_.on(
+      "/api/wifi", HTTP_POST, [](AsyncWebServerRequest*) {},
+      nullptr,
+      [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t, size_t) {
+        handleWifiAdd(request, data, len);
+      });
+
+  // 打印机
+  server_.on("/api/printer", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    handlePrinterGet(request);
+  });
+  server_.on(
+      "/api/printer/test", HTTP_POST, [](AsyncWebServerRequest*) {},
+      nullptr,
+      [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t, size_t) {
+        handlePrinterTest(request, data, len);
+      });
+
+  // 捕获 /api/wifi/N 的 DELETE：AsyncWebServer 用通配，需要扫 path
+  server_.on(
+      "/api/wifi/0", HTTP_DELETE, [this](AsyncWebServerRequest* request) { handleWifiDelete(request, 0); });
+  server_.on(
+      "/api/wifi/1", HTTP_DELETE, [this](AsyncWebServerRequest* request) { handleWifiDelete(request, 1); });
+  server_.on(
+      "/api/wifi/2", HTTP_DELETE, [this](AsyncWebServerRequest* request) { handleWifiDelete(request, 2); });
+  server_.on(
+      "/api/wifi/3", HTTP_DELETE, [this](AsyncWebServerRequest* request) { handleWifiDelete(request, 3); });
+  server_.on(
+      "/api/wifi/4", HTTP_DELETE, [this](AsyncWebServerRequest* request) { handleWifiDelete(request, 4); });
+
   server_.onNotFound([](AsyncWebServerRequest* request) {
     if (request->method() == HTTP_GET) {
       request->send_P(200, "text/html; charset=utf-8", kIndexHtml);
@@ -120,6 +155,104 @@ void WebControlAdapter::registerRoutes() {
     }
     request->send(404, "text/plain", "未找到");
   });
+#endif
+}
+
+void WebControlAdapter::sendJson(AsyncWebServerRequest* request, int code, const String& body) {
+#if defined(ARDUINO_ARCH_ESP32)
+  AsyncWebServerResponse* resp = request->beginResponse(code, "application/json", body);
+  resp->addHeader("Cache-Control", "no-store");
+  request->send(resp);
+#endif
+}
+
+void WebControlAdapter::handleWifiGet(AsyncWebServerRequest* request) {
+#if defined(ARDUINO_ARCH_ESP32)
+  JsonDocument doc;
+  doc["max"] = TimePrintWiFiManager::kMaxCredentials;
+  doc["default_used"] = wifi_ && wifi_->hasDefaultCredential();
+  JsonArray items = doc["items"].to<JsonArray>();
+  if (wifi_) {
+    int n = wifi_->credentialCount();
+    for (int i = 0; i < n; ++i) {
+      JsonObject o = items.add<JsonObject>();
+      o["index"] = i;
+      o["ssid"] = wifi_->credentialSsid(i);
+    }
+  }
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
+#endif
+}
+
+void WebControlAdapter::handleWifiAdd(AsyncWebServerRequest* request, uint8_t* data, size_t len) {
+#if defined(ARDUINO_ARCH_ESP32)
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, data, len);
+  if (err) {
+    sendJson(request, 400, "{\"error\":\"JSON 解析失败\"}");
+    return;
+  }
+  const char* ssid = doc["ssid"] | "";
+  const char* pass = doc["pass"] | "";
+  if (strlen(ssid) == 0) {
+    sendJson(request, 400, "{\"error\":\"ssid 不能为空\"}");
+    return;
+  }
+  if (!wifi_->saveCredentials(String(ssid), String(pass))) {
+    sendJson(request, 500, "{\"error\":\"保存失败（已满？NVS 错误？）\"}");
+    return;
+  }
+  // saveCredentials 会触发 ESP.restart()，下面这行通常来不及返回
+  sendJson(request, 200, "{\"ok\":true,\"restart\":true}");
+#endif
+}
+
+void WebControlAdapter::handleWifiDelete(AsyncWebServerRequest* request, int index) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (!wifi_ || index < 0 || index >= wifi_->credentialCount()) {
+    sendJson(request, 400, "{\"error\":\"索引无效\"}");
+    return;
+  }
+  String ssid = wifi_->credentialSsid(index);
+  wifi_->removeCredential(index);
+  wifi_->commitAndRestart();
+  // 通常 ESP.restart() 已经触发，构造一个应答但用户收不到
+  String body = String("{\"ok\":true,\"deleted\":\"") + ssid + "\"}";
+  sendJson(request, 200, body);
+#endif
+}
+
+void WebControlAdapter::handlePrinterGet(AsyncWebServerRequest* request) {
+#if defined(ARDUINO_ARCH_ESP32)
+  JsonDocument doc;
+  doc["rx_pin"] = PRINTER_RX_PIN;
+  doc["tx_pin"] = PRINTER_TX_PIN;
+  doc["baud"] = 115200;
+  doc["ready_timeout_ms"] = PRINTER_READY_TIMEOUT_MS;
+  // 通过 HPD482Printer::ready() 判活；activePrinter_ 是 Printer 基类指针
+  // 这里只暴露它是 stub 还是 hpd482，因为 Printer 接口没 ready()。
+  doc["active"] = activePrinter_ ? activePrinter_->name() : "none";
+  String out;
+  serializeJson(doc, out);
+  sendJson(request, 200, out);
+#endif
+}
+
+void WebControlAdapter::handlePrinterTest(AsyncWebServerRequest* request, uint8_t* data, size_t len) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (!activePrinter_) {
+    sendJson(request, 500, "{\"error\":\"没有可用打印机\"}");
+    return;
+  }
+  // testPage() 内部有串口 I/O，可能阻塞数百毫秒；AsyncWebServer 的
+  // body handler 在 async 线程里调用，阻塞太久会导致客户端看到连接断开。
+  // HPD482Printer::testPage() 内部已做就绪检查，未就绪时直接跳过，
+  // 阻塞时间 = sendCommand("AT+CN=32") 的 3s 超时 + 几条 printText 的等待，
+  // 实际上几乎不可能超过 ~1s（打印机就绪时），所以这里直接调用。
+  activePrinter_->testPage();
+  sendJson(request, 200, "{\"ok\":true}");
 #endif
 }
 

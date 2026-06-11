@@ -42,3 +42,18 @@
 - 串口监视：`cd firmware && pio device monitor -b 115200`
 
 如果 shell 中没有 `pio`，优先使用 `python -m platformio` 运行等价命令；两者都不可用时，必须记录为验证缺口，不要声称 PlatformIO 验证已通过。
+
+## 本机工具链（仓库内可复现）
+
+- Python 工具通过仓库根的 `pyproject.toml` 声明，`uv sync` 拉出 `.venv/`：
+  - `uv venv .venv` 然后 `uv pip install -p .venv/Scripts/python.exe -r pyproject.toml`
+  - 或者直接 `uv sync`
+- 之后用 `uv run pio ...` 跑命令。
+- native 测试需要宿主 gcc/g++（PlatformIO native env 直接调系统编译器）：
+  - Windows：装 WinLibs POSIX UCRT（GCC 14+），然后把它的 `bin/` 加到 PATH。
+  - 也可走 `tools/with-gcc.sh pio test -e native`，它在 exec 前自动 export PATH。
+- `.venv/`、`firmware/.pio/`、`firmware/build/`、根 `pyproject.toml` 不进提交（在 `.gitignore` 里）。
+
+## 验证缺口记录
+
+- **4D Systems GEN4-ESP32 (CH343) 上 esptool sync 失败**：2026-06-06 在本机 COM4 上跑 `pio run -e esp32s3 -t upload --upload-port COM4` 与裸 esptool `chip_id` / `read_mac` / `erase_flash`，都报 `Download mode successfully detected, but getting no sync reply: The serial TX path seems to be down.`，esptool 4.11.0 + ESP-ROM `esp32s3-20210327`。CH343 默认连到板子 `pins_arduino.h` 里 `TX=43, RX=44`（Serial1），HPD482 在 GPIO 16/17（Serial2），两路不冲突；旧固件在 COM4 上仍能正常输出启动 log 和 `[WiFi]` 状态文字。疑似 ROM 20210327 与新 esptool 4.11 的 sync 时序不兼容，或 CH343 自动复位序列在 DTR/RTS 转换后无法让 boot loader 守住 download 模式。在本机换 esptool 版本、断开 HPD482 UART、手动 BOOT+RST 都还没复现成功——本缺口在解决前不要在文档/PR 中声称"已烧入"。

@@ -25,6 +25,8 @@ class HPD482Printer : public Printer {
 
   void printSlip(const SlipData& slip) override;
   void printSimple(const char* message) override;
+  const char* name() const override { return "hpd482"; }
+  void testPage() override;
 
  private:
   HardwareSerial& serial_;
@@ -37,6 +39,7 @@ class HPD482Printer : public Printer {
   bool waitLine(String* out, uint32_t timeoutMs);
   bool waitOkSuffix(const char* suffix, uint32_t timeoutMs);
   void flushInput();
+  void dumpSerialTail(const __FlashStringHelper* tag);
   void writeEscapedText(const char* text);
   static void formatMMSS(uint32_t seconds, char* out, size_t len);
 };

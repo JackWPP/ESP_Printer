@@ -1,0 +1,12 @@
+[project]
+name = "timeprint-tools"
+version = "0.1.0"
+description = "TimePrint 项目本地工具链：PlatformIO + pyserial，供 native 测试、固件编译、烧录和烟测脚本使用"
+requires-python = ">=3.11"
+dependencies = [
+    "platformio>=6.1.16",
+    "pyserial>=3.5",
+]
+
+[tool.uv]
+package = false

@@ -12,15 +12,31 @@ bool HPD482Printer::begin(uint32_t readyTimeoutMs) {
   serial_.setTimeout(2000);
   ready_ = waitReady(readyTimeoutMs);
   if (!ready_) {
+    Serial.println(F("[HPD482] 未收到 READY，尝试发 AT"));
     serial_.print("AT");
     ready_ = waitOkSuffix("OK", 1000);
   }
-  if (!ready_) return false;
+  if (!ready_) {
+    Serial.println(F("[HPD482] AT 也未回 OK，握手失败"));
+    dumpSerialTail(F("[HPD482]"));
+    return false;
+  }
 
+  // 配置：UTF-8 中文编码、24 号字体、回显 PT OK、打印次数 = 1。
+  // 不再下发未在《AT 指令表 v4.6.5》内的 PM 之类未公开指令。
   bool configured = sendCommand("AT+EC=2") && sendCommand("AT+GU=1") &&
-                    sendCommand("AT+PM=0") && sendCommand("AT+CN=24");
+                    sendCommand("AT+CN=24") && sendCommand("AT+PC=1");
   ready_ = configured;
-  return ready_;
+  if (!configured) {
+    Serial.println(F("[HPD482] 配置指令失败"));
+    dumpSerialTail(F("[HPD482]"));
+    return ready_;
+  }
+
+  // 持久化上述配置，避免下次上电回到默认或异常态。
+  sendCommand("AT+SV");
+  Serial.println(F("[HPD482] 配置完成并保存"));
+  return true;
 }
 
 bool HPD482Printer::sendCommand(const char* command, uint32_t timeoutMs) {
@@ -111,6 +127,23 @@ void HPD482Printer::printSimple(const char* message) {
   feedPaperMm(10);
 }
 
+void HPD482Printer::testPage() {
+  if (!ready_) {
+    Serial.println(F("[HPD482] testPage 在未就绪时调用，跳过"));
+    return;
+  }
+  sendCommand("AT+CN=32");
+  printText("=== TimePrint 打印机自检 ===");
+  char buf[48];
+  snprintf(buf, sizeof(buf), "固件版本: %lu", static_cast<unsigned long>(millis() / 1000));
+  printText(buf);
+  snprintf(buf, sizeof(buf), "波特率: %lu", static_cast<unsigned long>(baud_));
+  printText(buf);
+  printText("AT+EC=2 / AT+GU=1 / AT+CN=32");
+  printText(":)");
+  feedPaperMm(20);
+}
+
 bool HPD482Printer::waitReady(uint32_t timeoutMs) {
   const char* target = "READY";
   int match = 0;
@@ -163,6 +196,34 @@ bool HPD482Printer::waitOkSuffix(const char* suffix, uint32_t timeoutMs) {
 
 void HPD482Printer::flushInput() {
   while (serial_.available()) serial_.read();
+}
+
+void HPD482Printer::dumpSerialTail(const __FlashStringHelper* tag) {
+  static const size_t kMaxDump = 96;
+  char hex[kMaxDump * 3 + 1];
+  char ascii[kMaxDump + 1];
+  size_t hx = 0;
+  size_t ax = 0;
+  size_t count = 0;
+  while (serial_.available() && count < kMaxDump) {
+    int raw = serial_.read();
+    if (raw < 0) break;
+    unsigned char c = static_cast<unsigned char>(raw);
+    if (hx + 3 < sizeof(hex)) {
+      hx += snprintf(hex + hx, sizeof(hex) - hx, "%02X ", c);
+    }
+    ascii[ax++] = (c >= 0x20 && c < 0x7F) ? static_cast<char>(c) : '.';
+    count++;
+  }
+  hex[hx] = '\0';
+  ascii[ax] = '\0';
+  Serial.print(tag);
+  Serial.print(F(" 接收 "));
+  Serial.print(count);
+  Serial.print(F(" 字节 | hex: "));
+  Serial.print(hex);
+  Serial.print(F(" | ascii: "));
+  Serial.println(ascii);
 }
 
 void HPD482Printer::writeEscapedText(const char* text) {
