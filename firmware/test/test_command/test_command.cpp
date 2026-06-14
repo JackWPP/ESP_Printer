@@ -19,14 +19,26 @@ struct FakeConfigStore : public IDeviceConfigStore {
   }
 };
 
+struct FakeTemplateStore : public ITemplateStore {
+  int sets = 0;
+  String lastMessage;
+
+  void setTemplateMessage(const char* message) override {
+    sets++;
+    lastMessage = message ? message : "";
+  }
+};
+
 static TimerCore core;
 static FakeConfigStore config;
+static FakeTemplateStore templateStore;
 static CommandAdapter* adapter = nullptr;
 
 void setUp(void) {
   core = TimerCore();
   config = FakeConfigStore();
-  adapter = new CommandAdapter(&core, &config);
+  templateStore = FakeTemplateStore();
+  adapter = new CommandAdapter(&core, &config, &templateStore);
 }
 
 void tearDown(void) {
@@ -79,11 +91,25 @@ void test_rejects_unknown_or_malformed_commands(void) {
   TEST_ASSERT_FALSE(handleJson("{\"minutes\":25}"));
 }
 
+void test_template_command_sets_message(void) {
+  TEST_ASSERT_TRUE(handleJson("{\"cmd\":\"template\",\"message\":\"加油 :)\"}"));
+  TEST_ASSERT_EQUAL_INT(1, templateStore.sets);
+  TEST_ASSERT_EQUAL_STRING("加油 :)", templateStore.lastMessage.c_str());
+}
+
+void test_template_command_rejected_without_store(void) {
+  delete adapter;
+  adapter = new CommandAdapter(&core, &config, nullptr);
+  TEST_ASSERT_FALSE(handleJson("{\"cmd\":\"template\",\"message\":\"x\"}"));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_set_and_start_commands_drive_timer_core);
   RUN_TEST(test_pause_resume_stop_reset_commands);
   RUN_TEST(test_config_command_saves_wifi_credentials);
   RUN_TEST(test_rejects_unknown_or_malformed_commands);
+  RUN_TEST(test_template_command_sets_message);
+  RUN_TEST(test_template_command_rejected_without_store);
   return UNITY_END();
 }
