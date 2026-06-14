@@ -4,8 +4,9 @@
 
 namespace timeprint {
 
-CommandAdapter::CommandAdapter(TimerCore* core, IDeviceConfigStore* configStore)
-    : core_(core), configStore_(configStore) {}
+CommandAdapter::CommandAdapter(TimerCore* core, IDeviceConfigStore* configStore,
+                               ITemplateStore* templateStore)
+    : core_(core), configStore_(configStore), templateStore_(templateStore) {}
 
 bool CommandAdapter::handle(JsonDocument& doc) {
   if (!core_ || !doc["cmd"].is<const char*>()) return false;
@@ -29,6 +30,10 @@ bool CommandAdapter::handle(JsonDocument& doc) {
     const char* ssid = data["ssid"] | "";
     const char* pass = data["pass"] | "";
     return configStore_->saveWiFiCredentials(String(ssid), String(pass));
+  } else if (strcmp(command, "template") == 0) {
+    if (!templateStore_) return false;
+    const char* msg = doc["message"] | "";
+    templateStore_->setTemplateMessage(msg);
   } else {
     return false;
   }
