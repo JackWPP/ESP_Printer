@@ -1,15 +1,17 @@
 #include "WebControlAdapter.h"
 
+#include "PrintTemplate.h"
 #include "PrinterConfig.h"
 #include "WebAssets.h"
 
 namespace timeprint {
 
-WebControlAdapter::WebControlAdapter(TimerCore* core, TimePrintWiFiManager* wifi)
+WebControlAdapter::WebControlAdapter(TimerCore* core, TimePrintWiFiManager* wifi,
+                                     TimerCorePrinterBridge* bridge)
     : core_(core),
-      wifi_(wifi)
-      ,
-      commandAdapter_(core, wifi)
+      wifi_(wifi),
+      bridge_(bridge),
+      commandAdapter_(core, wifi, this)
 #if defined(ARDUINO_ARCH_ESP32)
       ,
       server_(80),
@@ -74,6 +76,10 @@ void WebControlAdapter::onFeedback(Feedback) {
   broadcastStatus();
 }
 
+void WebControlAdapter::setTemplateMessage(const char* message) {
+  if (bridge_) bridge_->setTemplateMessage(message);
+}
+
 void WebControlAdapter::registerRoutes() {
 #if defined(ARDUINO_ARCH_ESP32)
   ws_.onEvent([this](AsyncWebSocket*, AsyncWebSocketClient* client, AwsEventType type, void*,
@@ -135,6 +141,40 @@ void WebControlAdapter::registerRoutes() {
       [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t, size_t) {
         handlePrinterTest(request, data, len);
       });
+
+  // 模板列表
+  server_.on("/api/templates", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    for (int i = 0; i < kTemplateCount; ++i) {
+      JsonObject o = arr.add<JsonObject>();
+      o["id"] = kTemplates[i].id;
+      o["name"] = kTemplates[i].name;
+      o["message"] = kTemplates[i].message;
+    }
+    String out;
+    serializeJson(doc, out);
+    sendJson(request, 200, out);
+  });
+
+  // 模板预览
+  server_.on("/api/preview", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    const char* id = request->getParam("template")
+                         ? request->getParam("template")->value().c_str()
+                         : "default";
+    const PrintTemplate* tpl = findTemplate(id);
+    JsonDocument doc;
+    doc["id"] = tpl->id;
+    doc["name"] = tpl->name;
+    doc["message"] = tpl->message;
+    doc["planned_s"] = core_ ? core_->plannedSeconds() : 0;
+    doc["remaining_s"] = core_ ? core_->remainingSeconds() : 0;
+    doc["elapsed_s"] = core_ ? core_->elapsedSeconds() : 0;
+    doc["overtime_s"] = core_ ? core_->overrunSeconds() : 0;
+    String out;
+    serializeJson(doc, out);
+    sendJson(request, 200, out);
+  });
 
   // 捕获 /api/wifi/N 的 DELETE：AsyncWebServer 用通配，需要扫 path
   server_.on(

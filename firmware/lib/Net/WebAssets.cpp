@@ -19,6 +19,15 @@ h1{font-size:24px;margin:0 0 4px}.sub{color:var(--muted);font-size:14px;margin:0
 label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}input{width:100%;height:42px;border:1px solid var(--line);border-radius:6px;padding:0 10px;font-size:16px;background:#fff;color:var(--ink)}
 button{height:42px;border:1px solid #bfc8d2;border-radius:6px;background:#fff;color:var(--ink);font-size:15px;cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:disabled{opacity:.5;cursor:not-allowed}
 .row{display:flex;gap:10px;margin-top:10px}.row>*{flex:1}.statusline{font-size:13px;color:var(--muted);margin-top:12px;min-height:20px}.setup{margin-top:16px;border-top:1px solid var(--line);padding-top:16px}.metric{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0;font-size:14px}.metric:last-child{border-bottom:0}
+.presets{display:flex;gap:8px;margin:10px 0}.preset{flex:1;height:36px;border-radius:18px;border:1px solid var(--line);background:#fff;font-size:14px;cursor:pointer;transition:background .15s,color .15s}.preset:hover,.preset.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+input[type=range]{-webkit-appearance:none;width:100%;height:6px;border-radius:3px;background:var(--line);outline:none;margin:10px 0;padding:0;border:none;height:6px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--accent);cursor:pointer;border:none;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--accent);cursor:pointer;border:none}
+.dial-overtime{fill:#f0f0f0;animation:pulse-white 2s ease-in-out infinite}
+@keyframes pulse-white{0%,100%{opacity:1}50%{opacity:.6}}
+.overtime-text{color:var(--red)}
+.tpl-btn{flex:1;height:36px;border-radius:18px;border:1px solid var(--line);background:#fff;font-size:13px;cursor:pointer;transition:background .15s,color .15s}
+.tpl-btn:hover,.tpl-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 @media(max-width:760px){main{grid-template-columns:1fr;padding:14px}.time{font-size:30px}}
 </style>
 </head>
@@ -38,6 +47,13 @@ button{height:42px;border:1px solid #bfc8d2;border-radius:6px;background:#fff;co
   <section class="panel">
     <label for="minutes">分钟</label>
     <input id="minutes" type="number" min="1" max="240" value="25" inputmode="numeric">
+    <div class="presets">
+      <button class="preset" data-min="5">5</button>
+      <button class="preset" data-min="15">15</button>
+      <button class="preset" data-min="25">25</button>
+      <button class="preset" data-min="45">45</button>
+    </div>
+    <input id="slider" type="range" min="1" max="120" value="25">
     <div class="grid">
       <button class="primary" data-cmd="set-start">设置并开始</button>
       <button data-cmd="pause">暂停</button>
@@ -62,23 +78,77 @@ button{height:42px;border:1px solid #bfc8d2;border-radius:6px;background:#fff;co
       <div class="metric"><span>剩余时间</span><span id="remaining">0 秒</span></div>
       <div class="metric"><span>超时时间</span><span id="overtime">0 秒</span></div>
     </div>
+    <div class="setup">
+      <label>打印模板</label>
+      <div id="tplList" class="presets"></div>
+    </div>
+    <div class="setup">
+      <label>便签预览</label>
+      <div id="preview" style="font-family:monospace;background:#fafafa;padding:12px;border:1px dashed var(--line);border-radius:6px;white-space:pre-line;font-size:13px;line-height:1.5;min-height:100px"></div>
+    </div>
   </section>
 </main>
 <script>
-const els={net:document.getElementById('net'),clock:document.getElementById('clock'),state:document.getElementById('state'),msg:document.getElementById('msg'),minutes:document.getElementById('minutes'),ssid:document.getElementById('ssid'),pass:document.getElementById('pass'),planned:document.getElementById('planned'),elapsed:document.getElementById('elapsed'),remaining:document.getElementById('remaining'),overtime:document.getElementById('overtime'),wedge:document.getElementById('wedge')};
+const els={net:document.getElementById('net'),clock:document.getElementById('clock'),state:document.getElementById('state'),msg:document.getElementById('msg'),minutes:document.getElementById('minutes'),slider:document.getElementById('slider'),ssid:document.getElementById('ssid'),pass:document.getElementById('pass'),planned:document.getElementById('planned'),elapsed:document.getElementById('elapsed'),remaining:document.getElementById('remaining'),overtime:document.getElementById('overtime'),wedge:document.getElementById('wedge'),tplList:document.getElementById('tplList'),preview:document.getElementById('preview')};
 let ws;
+let templates=[];let selectedTemplate='default';
+function loadTemplates(){fetch('/api/templates').then(r=>r.json()).then(d=>{templates=d;renderTemplateButtons()}).catch(()=>{})}
+function renderTemplateButtons(){els.tplList.innerHTML='';templates.forEach(t=>{const b=document.createElement('button');b.className='tpl-btn'+(t.id===selectedTemplate?' active':'');b.textContent=t.name;b.addEventListener('click',()=>{selectedTemplate=t.id;if(ws&&ws.readyState===1)ws.send(JSON.stringify({cmd:'template',message:t.message}));renderTemplateButtons();updatePreview()});els.tplList.appendChild(b)})}
+function updatePreview(){const a=animState;const msg=templates.find(t=>t.id===selectedTemplate);const line='──────────────────────';els.preview.textContent=line+'\n  预计 planned : '+mmss(a.planned)+'\n  实际 actual  : '+mmss(a.elapsed)+'\n  超时 overrun : '+mmss(a.overtime)+'\n'+line+'\n  '+(msg?msg.message:'加载中...')+'\n'+line}
+const LERP_SPEED=0.08;
+const animState={currentFrac:0,targetFrac:0,currentState:'idle',overtime:0,remaining:0,planned:0,elapsed:0};
 function mmss(s){s=Math.max(0,Number(s)||0);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
 function polar(cx,cy,r,a){const rad=(a-90)*Math.PI/180;return [cx+r*Math.cos(rad),cy+r*Math.sin(rad)]}
-function wedgePath(frac,state){if(state==='overtime'||frac<=0)return '';if(frac>=.999)return 'M50 50 m-47 0 a47 47 0 1 0 94 0 a47 47 0 1 0 -94 0';const start=polar(50,50,47,0),end=polar(50,50,47,360*frac),large=frac>.5?1:0;return `M50 50 L${start[0]} ${start[1]} A47 47 0 ${large} 1 ${end[0]} ${end[1]} Z`}
+function wedgePath(frac,state){if(state==='overtime')return 'M50 50 m-47 0 a47 47 0 1 0 94 0 a47 47 0 1 0 -94 0';if(frac<=0)return '';if(frac>=.999)return 'M50 50 m-47 0 a47 47 0 1 0 94 0 a47 47 0 1 0 -94 0';const start=polar(50,50,47,0),end=polar(50,50,47,360*frac),large=frac>.5?1:0;return `M50 50 L${start[0]} ${start[1]} A47 47 0 ${large} 1 ${end[0]} ${end[1]} Z`}
 function stateText(state){return {idle:'待机',running:'计时中',paused:'已暂停',overtime:'已超时'}[state]||'未知'}
 function secondsText(s){return (Number(s)||0)+' 秒'}
-function render(s){const planned=s.planned_s||0,remaining=s.remaining_s||0,elapsed=s.elapsed_s||0,overtime=s.overtime_s||0;els.clock.textContent=s.state==='overtime'?('+'+mmss(overtime)):mmss(remaining||planned);els.state.textContent=stateText(s.state);els.planned.textContent=secondsText(planned);els.elapsed.textContent=secondsText(elapsed);els.remaining.textContent=secondsText(remaining);els.overtime.textContent=secondsText(overtime);els.wedge.setAttribute('d',wedgePath(planned?remaining/planned:0,s.state))}
+function renderFrame(){
+  const{currentFrac:frac,currentState:state,overtime,remaining,planned,elapsed}=animState;
+  if(state==='overtime'){
+    els.clock.textContent='+'+mmss(overtime);
+    els.clock.classList.add('overtime-text');
+    els.wedge.setAttribute('class','dial-overtime');
+  }else{
+    els.clock.textContent=mmss(remaining||planned);
+    els.clock.classList.remove('overtime-text');
+    els.wedge.setAttribute('class','dial-rem');
+  }
+  els.state.textContent=stateText(state);
+  els.planned.textContent=secondsText(planned);
+  els.elapsed.textContent=secondsText(elapsed);
+  els.remaining.textContent=secondsText(remaining);
+  els.overtime.textContent=secondsText(overtime);
+  els.wedge.setAttribute('d',wedgePath(frac,state));
+}
+function animLoop(){
+  animState.currentFrac+=(animState.targetFrac-animState.currentFrac)*LERP_SPEED;
+  renderFrame();
+  updatePreview();
+  requestAnimationFrame(animLoop);
+}
+function applyState(s){
+  const planned=s.planned_s||0,remaining=s.remaining_s||0;
+  animState.targetFrac=planned?Math.min(1,remaining/planned):0;
+  animState.currentState=s.state||'idle';
+  animState.overtime=s.overtime_s||0;
+  animState.remaining=remaining;
+  animState.planned=planned;
+  animState.elapsed=s.elapsed_s||0;
+}
 async function post(obj){const r=await fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});if(!r.ok)throw new Error(await r.text());return r.json()}
-async function status(){const r=await fetch('/api/status');render(await r.json())}
+async function status(){const r=await fetch('/api/status');applyState(await r.json())}
 async function command(kind){try{els.msg.textContent='';if(kind==='set-start'){await post({cmd:'reset'});await post({cmd:'set',minutes:Number(els.minutes.value)||1});await post({cmd:'start'})}else if(kind==='savewifi'){await post({cmd:'config',data:{ssid:els.ssid.value,pass:els.pass.value}});els.msg.textContent='WiFi 已保存，设备正在重启。'}else if(kind==='status'){await status()}else{await post({cmd:kind})}}catch(e){els.msg.textContent=e.message}}
 document.querySelectorAll('button[data-cmd]').forEach(b=>b.addEventListener('click',()=>command(b.dataset.cmd)));
-function connect(){ws=new WebSocket(`ws://${location.host}/ws`);ws.onopen=()=>{els.net.textContent='WebSocket 已连接'};ws.onclose=()=>{els.net.textContent='WebSocket 已断开';setTimeout(connect,1500)};ws.onerror=()=>{els.net.textContent='WebSocket 错误'};ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch(_){}}}
-connect();status();
+function syncPreset(){
+  const v=Number(els.minutes.value);
+  document.querySelectorAll('.preset').forEach(b=>b.classList.toggle('active',Number(b.dataset.min)===v));
+}
+document.querySelectorAll('.preset').forEach(b=>b.addEventListener('click',()=>{els.minutes.value=b.dataset.min;els.slider.value=b.dataset.min;syncPreset()}));
+els.slider.addEventListener('input',()=>{els.minutes.value=els.slider.value;syncPreset()});
+els.minutes.addEventListener('input',()=>{els.slider.value=els.minutes.value;syncPreset()});
+syncPreset();
+function connect(){ws=new WebSocket(`ws://${location.host}/ws`);ws.onopen=()=>{els.net.textContent='WebSocket 已连接'};ws.onclose=()=>{els.net.textContent='WebSocket 已断开';setTimeout(connect,1500)};ws.onerror=()=>{els.net.textContent='WebSocket 错误'};ws.onmessage=e=>{try{applyState(JSON.parse(e.data))}catch(_){}}}
+connect();status();requestAnimationFrame(animLoop);loadTemplates();
 </script>
 </body>
 </html>
