@@ -116,6 +116,29 @@ void HPD482Printer::printSlip(const SlipData& slip) {
   feedPaperMm(10);
 }
 
+void HPD482Printer::printSlip(const SlipData& slip, const char* message) {
+  char planned[8];
+  char actual[8];
+  char overrun[8];
+  formatMMSS(slip.plannedSeconds, planned, sizeof(planned));
+  formatMMSS(slip.actualSeconds, actual, sizeof(actual));
+  formatMMSS(slip.overrunSeconds, overrun, sizeof(overrun));
+
+  sendCommand("AT+CN=24");
+  printText("------------------------");
+  char line[48];
+  snprintf(line, sizeof(line), "计划: %s", planned);
+  printText(line);
+  snprintf(line, sizeof(line), "实际: %s", actual);
+  printText(line);
+  snprintf(line, sizeof(line), "超时: %s", overrun);
+  printText(line);
+  printText("------------------------");
+  printText(message ? message : ":)");
+  printText("------------------------");
+  feedPaperMm(10);
+}
+
 void HPD482Printer::printSimple(const char* message) {
   Serial.println(F("[HPD482] printSimple 开始"));
   bool ok;

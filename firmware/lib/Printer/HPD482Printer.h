@@ -24,6 +24,7 @@ class HPD482Printer : public Printer {
   bool resetPrinter();
 
   void printSlip(const SlipData& slip) override;
+  void printSlip(const SlipData& slip, const char* message) override;
   void printSimple(const char* message) override;
   const char* name() const override { return "hpd482"; }
   void testPage() override;
