@@ -9,6 +9,7 @@
 
 #if defined(ARDUINO_ARCH_ESP32)
 #include "HPD482Printer.h"
+#include "PrintTemplate.h"
 #include "WebControlAdapter.h"
 #include "WiFiManager.h"
 #endif
@@ -117,7 +118,7 @@ static TimerCorePrinterBridge printerBridge(activePrinter);
 
 #if defined(ARDUINO_ARCH_ESP32)
 static TimePrintWiFiManager wifiManager;
-static WebControlAdapter webControl(&core, &wifiManager);
+static WebControlAdapter webControl(&core, &wifiManager, &printerBridge);
 #endif
 
 static uint32_t lastTickMs = 0;
@@ -142,7 +143,7 @@ static void printStatus() {
 }
 
 static void printHelp() {
-  Serial.println(F("命令: set <分钟> | start | pause | resume | stop | reset | hook | calib | status | wifilist [list|add|del|reset] | wifiset <ssid> <密码> | wifireset | help"));
+  Serial.println(F("命令: set <分钟> | start | pause | resume | stop | reset | hook | calib | status | template [消息] | wifilist [list|add|del|reset] | wifiset <ssid> <密码> | wifireset | help"));
 }
 
 static void handleSerialCommand(String command) {
@@ -171,6 +172,18 @@ static void handleSerialCommand(String command) {
     Serial.printf("> 校准 %s (GPIO%d)\n", calibOn ? "开启" : "关闭", HOOK_ADC_PIN);
   } else if (command == "status") {
     printStatus();
+#if defined(ARDUINO_ARCH_ESP32)
+  } else if (command.startsWith("template")) {
+    if (command.length() <= 9) {
+      const char* cur = printerBridge.templateMessage();
+      Serial.printf("> 当前模板消息: %s\n", cur ? cur : "(无)");
+    } else {
+      String msg = command.substring(9);
+      msg.trim();
+      printerBridge.setTemplateMessage(msg.c_str());
+      Serial.printf("> 模板消息已设置: %s\n", msg.c_str());
+    }
+#endif
   } else if (command.startsWith("wifiset ")) {
 #if defined(ARDUINO_ARCH_ESP32)
     int firstSpace = command.indexOf(' ');
