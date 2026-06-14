@@ -41,7 +41,7 @@ void TimerCore::start() {
 }
 
 void TimerCore::pause() {
-  if (state_ == State::Running || state_ == State::Overtime) {
+  if (state_ == State::Running) {
     pausedFrom_ = state_;
     transitionTo(State::Paused);
   }
@@ -52,7 +52,7 @@ void TimerCore::resume() {
 }
 
 void TimerCore::stop() {
-  if (state_ == State::Running || state_ == State::Overtime || state_ == State::Paused) {
+  if (state_ == State::Running || state_ == State::Paused) {
     transitionTo(State::Finished);
     emitFeedback(Feedback::Stop);
     emitSlip();
@@ -69,11 +69,14 @@ void TimerCore::reset() {
 }
 
 void TimerCore::tick() {
-  if (state_ != State::Running && state_ != State::Overtime) return;
+  if (state_ != State::Running) return;
   elapsedSeconds_++;
-  if (state_ == State::Running && elapsedSeconds_ >= plannedSeconds_) {
-    transitionTo(State::Overtime);
+  if (elapsedSeconds_ >= plannedSeconds_) {
+    transitionTo(State::Finished);
     emitFeedback(Feedback::TimeUp);
+    emitSlip();
+    transitionTo(State::Idle);
+    return;
   }
   emitTick();
 }

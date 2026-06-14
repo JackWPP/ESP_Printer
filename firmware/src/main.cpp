@@ -8,6 +8,7 @@
 #include "TimerCorePrinterBridge.h"
 
 #if defined(ARDUINO_ARCH_ESP32)
+#include <Preferences.h>
 #include "HPD482Printer.h"
 #include "PrintTemplate.h"
 #include "WebControlAdapter.h"
@@ -39,11 +40,22 @@ static const char* stateToChinese(State state) {
       return "计时中";
     case State::Paused:
       return "已暂停";
-    case State::Overtime:
-      return "已超时";
+    case State::Finished:
+      return "已完成";
   }
   return "未知";
 }
+
+#if defined(ARDUINO_ARCH_ESP32)
+String getBeijingTime() {
+  struct tm t;
+  if (!getLocalTime(&t)) return String("--");
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d",
+           t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min);
+  return String(buf);
+}
+#endif
 
 class SerialStatus : public ITimerCoreListener {
  public:
@@ -72,30 +84,50 @@ class SerialStatus : public ITimerCoreListener {
   }
 };
 
+extern uint32_t focusCount;
+
 class PrinterStub : public Printer {
  public:
   void printSlip(const SlipData& slip) override {
-    char planned[8];
-    char actual[8];
-    char overrun[8];
-    formatMMSS(slip.plannedSeconds, planned, sizeof(planned));
-    formatMMSS(slip.actualSeconds, actual, sizeof(actual));
-    formatMMSS(slip.overrunSeconds, overrun, sizeof(overrun));
+    printSlip(slip, "\u6162\u6162\u6765\uFF0C\u6BD4\u8F83\u5FEB");
+  }
 
-    Serial.println(F("\n----- [打印] 便签：软件计时路径 -----"));
-    Serial.printf("  计划时间：%s\n", planned);
-    Serial.printf("  实际用时：%s\n", actual);
-    Serial.printf("  超时时间：%s\n", overrun);
-    Serial.println(F("            :)"));
-    Serial.println(F("---------------------------------------\n"));
+  void printSlip(const SlipData& slip, const char* message) override {
+    Serial.println(F("\n~~~~~~~~~~~~~~~~~~~~~~~~"));
+    Serial.println(F("    \u2726 \u65F6\u5149\u5C0F\u5370 \u2726"));
+    Serial.println();
+    if (message && message[0]) {
+      Serial.printf("  \u300C%s\u300D\n", message);
+    }
+    Serial.println(F("~~~~~~~~~~~~~~~~~~~~~~~~"));
+    struct tm t;
+    if (getLocalTime(&t, 1000)) {
+      Serial.printf("  %04d\u5E74%02d\u6708%02d\u65E5 %02d:%02d\n",
+                    t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                    t.tm_hour, t.tm_min);
+    } else {
+      Serial.println(F("  --"));
+    }
+    Serial.printf("  \u7B2C %u \u6B21\u4E13\u6CE8\n", static_cast<unsigned>(focusCount));
+    Serial.println(F("~~~~~~~~~~~~~~~~~~~~~~~~\n"));
   }
 
   void printSimple(const char* message) override {
-    Serial.println(F("\n----- [打印] 便签：物理 hook 路径 -----"));
-    Serial.printf("  %s\n", message);
-    Serial.printf("  运行时间：%lu 秒\n", static_cast<unsigned long>(millis() / 1000));
-    Serial.println(F("            :)"));
-    Serial.println(F("---------------------------------------\n"));
+    Serial.println(F("\n~~~~~~~~~~~~~~~~~~~~~~~~"));
+    Serial.println(F("    \u2726 \u65F6\u5149\u5C0F\u5370 \u2726"));
+    Serial.println();
+    Serial.printf("  %s\n", message ? message : "\u7269\u7406\u8BA1\u65F6\u5668\u5230\u65F6");
+    Serial.println(F("~~~~~~~~~~~~~~~~~~~~~~~~"));
+    struct tm t;
+    if (getLocalTime(&t, 1000)) {
+      Serial.printf("  %04d\u5E74%02d\u6708%02d\u65E5 %02d:%02d\n",
+                    t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                    t.tm_hour, t.tm_min);
+    } else {
+      Serial.println(F("  --"));
+    }
+    Serial.printf("  \u7B2C %u \u6B21\u4E13\u6CE8\n", static_cast<unsigned>(focusCount));
+    Serial.println(F("~~~~~~~~~~~~~~~~~~~~~~~~\n"));
   }
 
   const char* name() const override { return "stub"; }
@@ -116,6 +148,26 @@ static HPD482Printer hpdPrinter(Serial2, PRINTER_RX_PIN, PRINTER_TX_PIN);
 static Printer* activePrinter = &stubPrinter;
 static TimerCorePrinterBridge printerBridge(activePrinter);
 
+uint32_t focusCount = 0;
+
+static void incrementFocusCount() {
+  focusCount++;
+#if defined(ARDUINO_ARCH_ESP32)
+  Preferences focusPrefs;
+  focusPrefs.begin("timeprint", false);
+  focusPrefs.putUInt("focus_count", focusCount);
+  focusPrefs.end();
+#endif
+  Serial.printf("[专注] 第 %u 次专注完成\n", static_cast<unsigned>(focusCount));
+}
+
+class FocusCounter : public ITimerCoreListener {
+ public:
+  void onPrintSlip(const SlipData&) override { incrementFocusCount(); }
+};
+
+static FocusCounter focusCounter;
+
 #if defined(ARDUINO_ARCH_ESP32)
 static TimePrintWiFiManager wifiManager;
 static WebControlAdapter webControl(&core, &wifiManager, &printerBridge);
@@ -127,8 +179,10 @@ static String lineBuffer;
 
 static void firePhysicalHook() {
   if (activePrinter) {
-    Serial.printf("[hook] 使用打印机: %s\n", activePrinter->name());
-    activePrinter->printSimple("物理计时器到时");
+    int idx = rand() % kTemplateCount;
+    const char* msg = kTemplates[idx].message;
+    Serial.printf("[hook] 使用打印机: %s, 话语: %s\n", activePrinter->name(), msg);
+    activePrinter->printSimple(msg);
   } else {
     Serial.println(F("[hook] 没有可用打印机！"));
   }
@@ -143,7 +197,7 @@ static void printStatus() {
 }
 
 static void printHelp() {
-  Serial.println(F("命令: set <分钟> | start | pause | resume | stop | reset | hook | calib | status | template [消息] | wifilist [list|add|del|reset] | wifiset <ssid> <密码> | wifireset | help"));
+  Serial.println(F("命令: set <分钟> | start | pause | resume | stop | reset | hook | calib | status | template [消息] | scan | wifilist [list|add|del|reset] | wifiset <ssid> <密码> | wifireset | help"));
 }
 
 static void handleSerialCommand(String command) {
@@ -183,6 +237,24 @@ static void handleSerialCommand(String command) {
       printerBridge.setTemplateMessage(msg.c_str());
       Serial.printf("> 模板消息已设置: %s\n", msg.c_str());
     }
+#endif
+  } else if (command == "scan") {
+#if defined(ARDUINO_ARCH_ESP32)
+    Serial.println(F("> 开始 WiFi 扫描..."));
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false, false);
+    delay(100);
+    WiFi.scanDelete();
+    int n = WiFi.scanNetworks();
+    Serial.printf("> 扫描完成，发现 %d 个网络\n", n);
+    for (int i = 0; i < n; ++i) {
+      Serial.printf("  [%d] %s (%ddBm) CH%d %s\n", i,
+                    WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.channel(i),
+                    WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "OPEN" : "SECURE");
+    }
+    WiFi.scanDelete();
+    WiFi.setAutoReconnect(true);
+    Serial.println(F("> 扫描结束"));
 #endif
   } else if (command.startsWith("wifiset ")) {
 #if defined(ARDUINO_ARCH_ESP32)
@@ -269,8 +341,15 @@ void setup() {
 
   core.addListener(&serialStatus);
   core.addListener(&printerBridge);
+  core.addListener(&focusCounter);
 #if defined(ARDUINO_ARCH_ESP32)
   core.addListener(&webControl);
+
+  Preferences focusPrefs;
+  focusPrefs.begin("timeprint", true);
+  focusCount = focusPrefs.getUInt("focus_count", 0);
+  focusPrefs.end();
+  Serial.printf("[专注] 已加载专注次数: %u\n", static_cast<unsigned>(focusCount));
 #endif
 
   Serial.println(F("\n=== TimePrint 固件骨架 ==="));

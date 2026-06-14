@@ -2,6 +2,8 @@
 
 #if defined(ARDUINO_ARCH_ESP32)
 
+extern uint32_t focusCount;
+
 namespace timeprint {
 
 HPD482Printer::HPD482Printer(HardwareSerial& serial, int rxPin, int txPin, uint32_t baud)
@@ -94,79 +96,67 @@ bool HPD482Printer::resetPrinter() {
   return ready_;
 }
 
-void HPD482Printer::printSlip(const SlipData& slip) {
-  char planned[8];
-  char actual[8];
-  char overrun[8];
-  formatMMSS(slip.plannedSeconds, planned, sizeof(planned));
-  formatMMSS(slip.actualSeconds, actual, sizeof(actual));
-  formatMMSS(slip.overrunSeconds, overrun, sizeof(overrun));
+static void printTimeAndCount(HPD482Printer& printer) {
+  struct tm t;
+  if (getLocalTime(&t, 1000)) {
+    char timeBuf[32];
+    snprintf(timeBuf, sizeof(timeBuf), "  %04d\u5E74%02d\u6708%02d\u65E5 %02d:%02d",
+             t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+             t.tm_hour, t.tm_min);
+    printer.printText(timeBuf);
+  } else {
+    printer.printText("  --");
+  }
+  char countBuf[24];
+  snprintf(countBuf, sizeof(countBuf), "  \u7B2C %u \u6B21\u4E13\u6CE8", static_cast<unsigned>(::focusCount));
+  printer.printText(countBuf);
+}
 
-  sendCommand("AT+CN=24");
-  printText("------------------------");
-  char line[48];
-  snprintf(line, sizeof(line), "计划: %s", planned);
-  printText(line);
-  snprintf(line, sizeof(line), "实际: %s", actual);
-  printText(line);
-  snprintf(line, sizeof(line), "超时: %s", overrun);
-  printText(line);
-  printText("        :)");
-  printText("------------------------");
-  feedPaperMm(10);
+void HPD482Printer::printSlip(const SlipData& slip) {
+  printSlip(slip, "\u6162\u6162\u6765\uFF0C\u6BD4\u8F83\u5FEB");
 }
 
 void HPD482Printer::printSlip(const SlipData& slip, const char* message) {
-  char planned[8];
-  char actual[8];
-  char overrun[8];
-  formatMMSS(slip.plannedSeconds, planned, sizeof(planned));
-  formatMMSS(slip.actualSeconds, actual, sizeof(actual));
-  formatMMSS(slip.overrunSeconds, overrun, sizeof(overrun));
+  sendCommand("AT+CN=32");
+  printText("");
+  printText("~~~~~~~~~~~~~~~~~~~~~~~~");
+  printText("");
+  printText("    \u2726 \u65F6\u5149\u5C0F\u5370 \u2726");
+  printText("");
 
   sendCommand("AT+CN=24");
-  printText("------------------------");
-  char line[48];
-  snprintf(line, sizeof(line), "计划: %s", planned);
-  printText(line);
-  snprintf(line, sizeof(line), "实际: %s", actual);
-  printText(line);
-  snprintf(line, sizeof(line), "超时: %s", overrun);
-  printText(line);
-  printText("------------------------");
-  printText(message ? message : ":)");
-  printText("------------------------");
+  if (message && message[0]) {
+    char formatted[80];
+    snprintf(formatted, sizeof(formatted), "  \u300C%s\u300D", message);
+    printText(formatted);
+  }
+  printText("");
+  printText("~~~~~~~~~~~~~~~~~~~~~~~~");
+
+  printTimeAndCount(*this);
+
+  printText("~~~~~~~~~~~~~~~~~~~~~~~~");
   feedPaperMm(10);
 }
 
 void HPD482Printer::printSimple(const char* message) {
-  Serial.println(F("[HPD482] printSimple 开始"));
-  bool ok;
+  sendCommand("AT+CN=32");
+  printText("");
+  printText("~~~~~~~~~~~~~~~~~~~~~~~~");
+  printText("");
+  printText("    \u2726 \u65F6\u5149\u5C0F\u5370 \u2726");
+  printText("");
 
-  ok = sendCommand("AT+CN=24");
-  Serial.printf("[HPD482] AT+CN=24 → %d\n", ok ? 1 : 0);
+  sendCommand("AT+CN=24");
+  printText(message ? message : "\u7269\u7406\u8BA1\u65F6\u5668\u5230\u65F6");
 
-  ok = printText("------------------------");
-  Serial.printf("[HPD482] 分隔线 → %d\n", ok ? 1 : 0);
+  printText("");
+  printText("~~~~~~~~~~~~~~~~~~~~~~~~");
 
-  ok = printText(message ? message : "物理计时器到时");
-  Serial.printf("[HPD482] 消息 → %d\n", ok ? 1 : 0);
+  printTimeAndCount(*this);
 
-  char uptime[32];
-  snprintf(uptime, sizeof(uptime), "运行: %lu秒", static_cast<unsigned long>(millis() / 1000));
-  ok = printText(uptime);
-  Serial.printf("[HPD482] 时间 → %d\n", ok ? 1 : 0);
-
-  ok = printText("        :)");
-  Serial.printf("[HPD482] 笑脸 → %d\n", ok ? 1 : 0);
-
-  ok = printText("------------------------");
-  Serial.printf("[HPD482] 分隔线 → %d\n", ok ? 1 : 0);
-
-  ok = feedPaperMm(10);
-  Serial.printf("[HPD482] 走纸 → %d\n", ok ? 1 : 0);
-
-  Serial.println(F("[HPD482] printSimple 完成"));
+  printText("~~~~~~~~~~~~~~~~~~~~~~~~");
+  feedPaperMm(10);
 }
 
 void HPD482Printer::testPage() {

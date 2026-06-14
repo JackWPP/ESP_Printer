@@ -74,15 +74,18 @@ void test_countdown(void) {
   TEST_ASSERT_EQUAL_UINT32(30, core.remainingSeconds());
 }
 
-void test_enters_overtime(void) {
+void test_auto_stop_at_zero(void) {
   core.setTime(1);
   core.start();
-  for (int i = 0; i < 60; ++i) core.tick();
-  ASSERT_STATE(State::Overtime, core.state());
-  TEST_ASSERT_EQUAL_UINT32(0, core.remainingSeconds());
-  TEST_ASSERT_EQUAL_INT(1, rec.timeUps);
+  for (int i = 0; i < 59; ++i) core.tick();
+  ASSERT_STATE(State::Running, core.state());
+  TEST_ASSERT_EQUAL_UINT32(1, core.remainingSeconds());
   core.tick();
-  TEST_ASSERT_EQUAL_UINT32(1, core.overrunSeconds());
+  ASSERT_STATE(State::Idle, core.state());
+  TEST_ASSERT_EQUAL_INT(1, rec.timeUps);
+  TEST_ASSERT_EQUAL_INT(1, rec.slips);
+  TEST_ASSERT_EQUAL_UINT32(60, rec.lastSlip.plannedSeconds);
+  TEST_ASSERT_EQUAL_UINT32(60, rec.lastSlip.actualSeconds);
 }
 
 void test_pause_freezes_then_resume(void) {
@@ -101,13 +104,13 @@ void test_pause_freezes_then_resume(void) {
 void test_stop_emits_slip_and_returns_idle(void) {
   core.setTime(1);
   core.start();
-  for (int i = 0; i < 90; ++i) core.tick();
+  for (int i = 0; i < 30; ++i) core.tick();
   core.stop();
   ASSERT_STATE(State::Idle, core.state());
   TEST_ASSERT_EQUAL_INT(1, rec.slips);
   TEST_ASSERT_EQUAL_UINT32(60, rec.lastSlip.plannedSeconds);
-  TEST_ASSERT_EQUAL_UINT32(90, rec.lastSlip.actualSeconds);
-  TEST_ASSERT_EQUAL_UINT32(30, rec.lastSlip.overrunSeconds);
+  TEST_ASSERT_EQUAL_UINT32(30, rec.lastSlip.actualSeconds);
+  TEST_ASSERT_EQUAL_UINT32(0, rec.lastSlip.overrunSeconds);
 }
 
 void test_reset_clears(void) {
@@ -133,7 +136,7 @@ int main(int, char**) {
   RUN_TEST(test_set_and_start);
   RUN_TEST(test_start_ignored_without_time);
   RUN_TEST(test_countdown);
-  RUN_TEST(test_enters_overtime);
+  RUN_TEST(test_auto_stop_at_zero);
   RUN_TEST(test_pause_freezes_then_resume);
   RUN_TEST(test_stop_emits_slip_and_returns_idle);
   RUN_TEST(test_reset_clears);

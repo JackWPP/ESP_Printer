@@ -15,27 +15,28 @@ namespace timeprint {
 class TimePrintWiFiManager : public IDeviceConfigStore {
  public:
   static const int kMaxCredentials = 5;
+  static const int kMaxScanResults = 20;
 
   void begin();
   void loop();
   void resetWiFi();
   bool isApMode() const { return apMode_; }
+  bool isStaConnected() const;
   const String& apSsid() const { return apSsid_; }
   String ipString() const;
 
-  // 多凭据 API
+  String getScanJson();
+
   int  credentialCount() const { return credentialCount_; }
-  String credentialSsid(int index) const;        // 密码不回显
+  String credentialSsid(int index) const;
   bool hasDefaultCredential() const { return usingDefault_; }
 
-  // 写操作（不重启，留给上层在事务结束时统一 commit）
   void loadFromNvs();
   bool appendCredential(const String& ssid, const String& pass);
   bool removeCredential(int index);
   void clearAll();
   void commitAndRestart();
 
-  // 兼容旧的 IDeviceConfigStore（等价 appendCredential + commit）
   bool saveCredentials(const String& ssid, const String& pass);
   bool saveWiFiCredentials(const String& ssid, const String& pass) override {
     return saveCredentials(ssid, pass);
@@ -48,11 +49,22 @@ class TimePrintWiFiManager : public IDeviceConfigStore {
 #endif
   bool apMode_ = true;
   String apSsid_;
-  // 内存中缓存所有凭据的 SSID 和密码，避免 commitAndRestart 中嵌套 Preferences
   String credentials_[kMaxCredentials];
   String passwords_[kMaxCredentials];
   int credentialCount_ = 0;
   bool usingDefault_ = false;
+
+  enum ScanState { SCAN_IDLE, SCAN_RUNNING };
+  ScanState scanState_ = SCAN_IDLE;
+  uint32_t lastScanMs_ = 0;
+  static const uint32_t kScanIntervalMs = 10000;
+
+  String scanJson_ = "{\"scanning\":true,\"aps\":[]}";
+  SemaphoreHandle_t jsonMutex_ = nullptr;
+
+  void scanTick();
+  void buildScanJson(int n);
+  static String jsonEscape(const String& s);
 
   void startAp();
   bool tryStaSequential();

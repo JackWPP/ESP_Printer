@@ -3,7 +3,6 @@
 namespace timeprint {
 
 namespace {
-// 出厂兜底凭据。NVS 为空时使用，不写入 NVS，方便 wifilist reset 回到默认。
 const char kDefaultSsid[] = "xgx";
 const char kDefaultPass[] = "1234567890";
 constexpr uint32_t kStaAttemptTimeoutMs = 12000;
@@ -11,6 +10,8 @@ constexpr uint32_t kStaAttemptTimeoutMs = 12000;
 
 void TimePrintWiFiManager::begin() {
 #if defined(ARDUINO_ARCH_ESP32)
+  jsonMutex_ = xSemaphoreCreateMutex();
+
   loadFromNvs();
 
   if (credentialCount_ == 0) {
@@ -23,12 +24,14 @@ void TimePrintWiFiManager::begin() {
 
   if (tryStaSequential()) return;
   startAp();
+  lastScanMs_ = millis() - kScanIntervalMs;
 #endif
 }
 
 void TimePrintWiFiManager::loop() {
 #if defined(ARDUINO_ARCH_ESP32)
   if (apMode_) dns_.processNextRequest();
+  scanTick();
 #endif
 }
 
@@ -53,6 +56,94 @@ String TimePrintWiFiManager::ipString() const {
 #else
   return String();
 #endif
+}
+
+bool TimePrintWiFiManager::isStaConnected() const {
+#if defined(ARDUINO_ARCH_ESP32)
+  return !apMode_ && WiFi.status() == WL_CONNECTED;
+#else
+  return false;
+#endif
+}
+
+String TimePrintWiFiManager::getScanJson() {
+  String result;
+  if (jsonMutex_ && xSemaphoreTake(jsonMutex_, pdMS_TO_TICKS(50)) == pdTRUE) {
+    result = scanJson_;
+    xSemaphoreGive(jsonMutex_);
+  } else {
+    result = "{\"scanning\":true,\"aps\":[]}";
+  }
+  return result;
+}
+
+void TimePrintWiFiManager::scanTick() {
+#if defined(ARDUINO_ARCH_ESP32)
+  switch (scanState_) {
+  case SCAN_IDLE:
+    if (millis() - lastScanMs_ >= kScanIntervalMs) {
+      int r = WiFi.scanNetworks(true, false);
+      if (r == WIFI_SCAN_RUNNING) {
+        scanState_ = SCAN_RUNNING;
+        Serial.println("[WiFi] 后台扫描已启动");
+      } else {
+        lastScanMs_ = millis();
+      }
+    }
+    break;
+  case SCAN_RUNNING: {
+    int n = WiFi.scanComplete();
+    if (n >= 0) {
+      buildScanJson(n);
+      WiFi.scanDelete();
+      lastScanMs_ = millis();
+      scanState_ = SCAN_IDLE;
+      Serial.printf("[WiFi] 后台扫描完成，%d 个网络\n", n);
+    } else if (n == WIFI_SCAN_FAILED) {
+      WiFi.scanDelete();
+      lastScanMs_ = millis();
+      scanState_ = SCAN_IDLE;
+      Serial.println("[WiFi] 后台扫描失败");
+    }
+    break;
+  }
+  }
+#endif
+}
+
+void TimePrintWiFiManager::buildScanJson(int n) {
+  String json = "{\"scanning\":false,\"aps\":[";
+  int count = n < kMaxScanResults ? n : kMaxScanResults;
+  for (int i = 0; i < count; i++) {
+    if (i) json += ',';
+    json += "{\"ssid\":\"";
+    json += jsonEscape(WiFi.SSID(i));
+    json += "\",\"rssi\":";
+    json += String(WiFi.RSSI(i));
+    json += ",\"channel\":";
+    json += String(WiFi.channel(i));
+    json += ",\"secure\":";
+    json += (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) ? "true" : "false";
+    json += '}';
+  }
+  json += "]}";
+
+  if (jsonMutex_ && xSemaphoreTake(jsonMutex_, pdMS_TO_TICKS(50)) == pdTRUE) {
+    scanJson_ = json;
+    xSemaphoreGive(jsonMutex_);
+  }
+}
+
+String TimePrintWiFiManager::jsonEscape(const String& s) {
+  String out;
+  out.reserve(s.length() + 8);
+  for (unsigned int i = 0; i < s.length(); i++) {
+    char c = s[i];
+    if (c == '"') out += "\\\"";
+    else if (c == '\\') out += "\\\\";
+    else out += c;
+  }
+  return out;
 }
 
 String TimePrintWiFiManager::credentialSsid(int index) const {
@@ -88,17 +179,13 @@ bool TimePrintWiFiManager::appendCredential(const String& ssid, const String& pa
   if (ssid.length() == 0) return false;
   if (credentialCount_ >= kMaxCredentials) return false;
 
-  // 如果默认凭据当前在用（内存有但 NVS 没有），先把默认晋升到 NVS slot 0
-  // 避免 NVS 中 ssid_0/pass_0 缺失导致下次启动默认走空密码。
   if (usingDefault_) {
     credentials_[0] = kDefaultSsid;
     passwords_[0] = kDefaultPass;
     writePassForIndex(0, kDefaultPass);
     usingDefault_ = false;
-    // credentialCount_ 保持 1：现在凭据表里只有默认
   }
 
-  // 重复检测：相同 SSID 视为覆盖更新
   for (int i = 0; i < credentialCount_; ++i) {
     if (credentials_[i] == ssid) {
       passwords_[i] = pass;
@@ -107,7 +194,6 @@ bool TimePrintWiFiManager::appendCredential(const String& ssid, const String& pa
     }
   }
 
-  // 追加
   credentials_[credentialCount_] = ssid;
   passwords_[credentialCount_] = pass;
   writePassForIndex(credentialCount_, pass);
@@ -137,7 +223,6 @@ void TimePrintWiFiManager::clearAll() {
 
 bool TimePrintWiFiManager::saveCredentials(const String& ssid, const String& pass) {
   if (ssid.length() == 0) return false;
-  // 兼容旧 API：单步写 + 重启
   if (!appendCredential(ssid, pass)) return false;
   commitAndRestart();
   return true;
@@ -148,14 +233,12 @@ void TimePrintWiFiManager::commitAndRestart() {
   prefs_.begin("timeprint", false);
   int prevCount = prefs_.getInt("count", 0);
   if (prevCount > kMaxCredentials) prevCount = kMaxCredentials;
-  // 写当前所有 (ssid, pass) 槽位（用内存缓存，不嵌套 Preferences）
   for (int i = 0; i < credentialCount_; ++i) {
     String ssidKey = "ssid_" + String(i);
     String passKey = "pass_" + String(i);
     prefs_.putString(ssidKey.c_str(), credentials_[i]);
     if (passwords_[i].length() > 0) prefs_.putString(passKey.c_str(), passwords_[i]);
   }
-  // 清理超过当前 count 的旧槽位
   for (int i = credentialCount_; i < prevCount; ++i) {
     String ssidKey = "ssid_" + String(i);
     String passKey = "pass_" + String(i);
@@ -207,8 +290,11 @@ void TimePrintWiFiManager::startAp() {
 #if defined(ARDUINO_ARCH_ESP32)
   apMode_ = true;
   apSsid_ = makeApSsid();
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(apSsid_.c_str());
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(false);
+  WiFi.softAP(apSsid_.c_str(), nullptr, 1, 0, 4);
   dns_.start(53, "*", WiFi.softAPIP());
   Serial.printf("[WiFi] AP %s 地址 %s\n", apSsid_.c_str(), WiFi.softAPIP().toString().c_str());
 #endif
@@ -218,6 +304,8 @@ bool TimePrintWiFiManager::startSta(const String& ssid, const String& pass) {
 #if defined(ARDUINO_ARCH_ESP32)
   apMode_ = false;
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(ssid.c_str(), pass.c_str());
   Serial.printf("[WiFi] 正在连接 %s", ssid.c_str());
   uint32_t start = millis();
@@ -228,6 +316,8 @@ bool TimePrintWiFiManager::startSta(const String& ssid, const String& pass) {
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("[WiFi] STA 已连接，地址 %s\n", WiFi.localIP().toString().c_str());
+    configTime(8 * 3600, 0, "pool.ntp.org", "ntp.aliyun.com");
+    Serial.println("[NTP] 已启动 NTP 同步 (UTC+8)");
     return true;
   }
   Serial.printf("[WiFi] STA %s 连接失败\n", ssid.c_str());

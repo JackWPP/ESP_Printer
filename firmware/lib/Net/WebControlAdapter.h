@@ -11,7 +11,7 @@
 #include "WiFiManager.h"
 
 #if defined(ARDUINO_ARCH_ESP32)
-#include <ESPAsyncWebServer.h>
+#include <WebServer.h>
 #endif
 
 namespace timeprint {
@@ -26,7 +26,6 @@ class WebControlAdapter : public ITimerCoreListener, public ITemplateStore {
   void setTemplateMessage(const char* message) override;
   bool handleCommand(JsonDocument& doc);
   String statusJson() const;
-  void broadcastStatus();
 
   void onStateChanged(State from, State to) override;
   void onTick(const TickInfo& info) override;
@@ -41,17 +40,11 @@ class WebControlAdapter : public ITimerCoreListener, public ITemplateStore {
   uint32_t lastBroadcastMs_ = 0;
 
 #if defined(ARDUINO_ARCH_ESP32)
-  AsyncWebServer server_;
-  AsyncWebSocket ws_;
+  WebServer server_;
 #endif
 
   void registerRoutes();
-  void handleWifiGet(AsyncWebServerRequest* request);
-  void handleWifiAdd(AsyncWebServerRequest* request, uint8_t* data, size_t len);
-  void handleWifiDelete(AsyncWebServerRequest* request, int index);
-  void handlePrinterGet(AsyncWebServerRequest* request);
-  void handlePrinterTest(AsyncWebServerRequest* request, uint8_t* data, size_t len);
-  void sendJson(AsyncWebServerRequest* request, int code, const String& body);
+  void sendJson(int code, const String& body);
 };
 
 }  // namespace timeprint

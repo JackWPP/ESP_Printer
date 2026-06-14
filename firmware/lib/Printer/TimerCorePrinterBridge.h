@@ -1,5 +1,6 @@
 #pragma once
 
+#include "PrintTemplate.h"
 #include "Printer.h"
 #include "TimerCore.h"
 
@@ -7,7 +8,9 @@ namespace timeprint {
 
 class TimerCorePrinterBridge : public ITimerCoreListener {
  public:
-  explicit TimerCorePrinterBridge(Printer* printer) : printer_(printer) {}
+  explicit TimerCorePrinterBridge(Printer* printer) : printer_(printer) {
+    srand(millis());
+  }
 
   void setPrinter(Printer* printer) { printer_ = printer; }
   Printer* printer() const { return printer_; }
@@ -20,7 +23,8 @@ class TimerCorePrinterBridge : public ITimerCoreListener {
     if (templateMessage_) {
       printer_->printSlip(slip, templateMessage_);
     } else {
-      printer_->printSlip(slip);
+      int idx = rand() % kTemplateCount;
+      printer_->printSlip(slip, kTemplates[idx].message);
     }
   }
 
